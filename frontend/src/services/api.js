@@ -1,15 +1,17 @@
 // frontend/src/services/api.js
 import axios from "axios";
 
+// استخدم VITE_API_URL من Render وإلا محلياً 8000
 const baseURL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-const api = axios.create({
+// أنشئ إنستانس واحد فقط
+const instance = axios.create({
   baseURL,
-  // withCredentials: true, // فعّلها فقط لو تستخدم جلسات/كوكيز
+  // withCredentials: true, // فعّلها فقط لو تعتمد على جلسات/كوكيز
 });
 
-// مثال دوال جاهزة (اختياري)
-export const getProject = (id) => api.get(`/api/projects/${id}/`);
-export const createProject = (payload) => api.post(`/api/projects/`, payload);
+// صدّر بنفس الاسم الذي يستخدمه الكود الحالي
+export const api = instance;
 
-export default api;
+// وصدّر كـ default أيضاً لو في ملفات تستورده بدون أقواس
+export default instance;
