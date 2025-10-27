@@ -91,12 +91,19 @@ DATABASES = {
 # =========================
 # CORS / CSRF
 # =========================
-CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOWED_ORIGINS = [
+    "https://eng-hayder-frontend.onrender.com",
+]
 
 CSRF_TRUSTED_ORIGINS = [
     "https://eng-hayder.onrender.com",
+    "https://eng-hayder-frontend.onrender.com",
 ]
+
+CORS_ALLOW_ALL_ORIGINS = False
+
 
 # =========================
 # Static / Media
