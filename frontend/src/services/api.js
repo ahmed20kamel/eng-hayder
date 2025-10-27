@@ -1,17 +1,18 @@
 // frontend/src/services/api.js
 import axios from "axios";
 
-// استخدم VITE_API_URL من Render وإلا محلياً 8000
-const baseURL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// نظّف الـ URL من أي / في آخره
+const ROOT = (import.meta.env.VITE_API_URL || "http://localhost:8000").replace(
+  /\/+$/,
+  ""
+);
 
-// أنشئ إنستانس واحد فقط
+// الواجهة الأساسية للـ API تنتهي بـ /api/
 const instance = axios.create({
-  baseURL,
-  // withCredentials: true, // فعّلها فقط لو تعتمد على جلسات/كوكيز
+  baseURL: `${ROOT}/api/`,
+  withCredentials: true, // لا تضر، وضرورية لو استخدمت جلسات مستقبلاً
 });
 
-// صدّر بنفس الاسم الذي يستخدمه الكود الحالي
+// تصديرين ليتوافق مع كل الاستيرادات
 export const api = instance;
-
-// وصدّر كـ default أيضاً لو في ملفات تستورده بدون أقواس
 export default instance;
