@@ -1,5 +1,15 @@
+// frontend/src/services/api.js
 import axios from "axios";
-export const api = axios.create({
-  baseURL: "http://127.0.0.1:8000/api/",
-  headers: { "Content-Type": "application/json" },
+
+const baseURL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+
+const api = axios.create({
+  baseURL,
+  // withCredentials: true, // فعّلها فقط لو تستخدم جلسات/كوكيز
 });
+
+// مثال دوال جاهزة (اختياري)
+export const getProject = (id) => api.get(`/api/projects/${id}/`);
+export const createProject = (payload) => api.post(`/api/projects/`, payload);
+
+export default api;

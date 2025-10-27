@@ -1,25 +1,27 @@
 from pathlib import Path
 import os
 
-# =========================
-# Paths & Base
-# =========================
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # =========================
-# Security (تطوير فقط)
+# Security
 # =========================
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'dev-secret-key-change-in-prod')
-DEBUG = True
 
-# أثناء التطوير يمكنك السماح للجميع، أو حدد عناوينك:
-ALLOWED_HOSTS = ["*", "localhost", "127.0.0.1", "192.168.1.26"]
+DEBUG = True  # خلّيها True لحد ما نتأكد أن كل شيء شغال على Render
+
+# السماح لكل الهوست الآن
+ALLOWED_HOSTS = [
+    "*",
+    "localhost",
+    "127.0.0.1",
+    "eng-hayder.onrender.com"
+]
 
 # =========================
-# Applications
+# Installed Apps
 # =========================
 INSTALLED_APPS = [
-    # Django
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -27,22 +29,22 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
-    # Third-party
     'rest_framework',
     'corsheaders',
 
-    # Local apps
     'projects',
 ]
 
 # =========================
-# Middleware (ترتيب مهم)
+# Middleware
 # =========================
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
 
-    # ضع CorsMiddleware قبل CommonMiddleware وCsrfViewMiddleware
+    # WhiteNoise لتقديم static في الإنتاج
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+
+    'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
 
@@ -64,7 +66,7 @@ ASGI_APPLICATION = 'backend.asgi.application'
 # =========================
 TEMPLATES = [{
     'BACKEND': 'django.template.backends.django.DjangoTemplates',
-    'DIRS': [BASE_DIR / 'templates'],   # مجلد قوالب اختياري
+    'DIRS': [BASE_DIR / 'templates'],
     'APP_DIRS': True,
     'OPTIONS': {
         'context_processors': [
@@ -77,7 +79,7 @@ TEMPLATES = [{
 }]
 
 # =========================
-# Database (تطوير)
+# Database
 # =========================
 DATABASES = {
     'default': {
@@ -86,25 +88,26 @@ DATABASES = {
     }
 }
 
-AUTH_PASSWORD_VALIDATORS = []  # للتطوير فقط
+# =========================
+# CORS / CSRF
+# =========================
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://eng-hayder.onrender.com",
+]
 
 # =========================
-# I18N / TZ
+# Static / Media
 # =========================
-LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'Asia/Dubai'
-USE_I18N = True
-USE_TZ = True
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# =========================
-# Static & Media (تطوير)
-# =========================
-STATIC_URL = '/static/'
-STATICFILES_DIRS = [BASE_DIR / 'static'] if (BASE_DIR / 'static').exists() else []
-STATIC_ROOT = BASE_DIR / 'staticfiles'  # مفيد عند الجمع
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
-MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -114,54 +117,14 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': ['rest_framework.renderers.JSONRenderer'],
     'DEFAULT_PARSER_CLASSES': ['rest_framework.parsers.JSONParser'],
-    # أضف Auth/Permissions لاحقًا حسب الحاجة
 }
 
 # =========================
-# CORS / CSRF للتطوير عبر الشبكة
-# =========================
-# إذا تريد السماح للجميع أثناء التطوير:
-CORS_ALLOW_ALL_ORIGINS = True
-
-# لو احتجت تحديد أصول معيّنة بدلاً من السماح للجميع، علّق السطر أعلاه
-# واستخدم التالي وعدّل IP ومنفذ Vite حسب جهازك:
-# CORS_ALLOWED_ORIGINS = [
-#     "http://localhost:5174",
-#     "http://127.0.0.1:5174",
-#     "http://192.168.1.26:5174",
-# ]
-
-# لو تستخدم Cookies/Session من الواجهة الأمامية:
-CORS_ALLOW_CREDENTIALS = True
-
-# لحماية CSRF، يجب تحديد الأصول الموثوقة عند POST من Origin مختلف.
-# لا توجد Wildcards لعناوين IP، لذا حدّدها صراحةً، وعدّل IP عند تغيّره.
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5174",
-    "http://127.0.0.1:5174",
-    "http://192.168.1.26:5174",
-]
-
-# =========================
-# Cookies للتطوير
-# =========================
-SESSION_COOKIE_SECURE = False
-CSRF_COOKIE_SECURE = False
-
-# =========================
-# Logging (اختياري لكنه مفيد)
+# Logging
 # =========================
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
-    'formatters': {
-        'simple': {'format': '[{levelname}] {message}', 'style': '{'},
-    },
-    'handlers': {
-        'console': {'class': 'logging.StreamHandler', 'formatter': 'simple'},
-    },
-    'root': {
-        'handlers': ['console'],
-        'level': 'INFO',
-    },
+    'handlers': {'console': {'class': 'logging.StreamHandler'}},
+    'root': {'handlers': ['console'], 'level': 'INFO'}
 }
