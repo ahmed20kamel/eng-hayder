@@ -1,12 +1,16 @@
 // src/pages/wizard/steps/ContractStep.jsx
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
+import i18n from "../../../i18n";
 import { api } from "../../../services/api";
 import WizardShell from "../components/WizardShell";
 import StepActions from "../components/StepActions";
 import Field from "../components/Field";
 import RtlSelect from "../../../components/RtlSelect";
+import InfoTip from "../components/InfoTip";
 import {
-  FaFileSignature, FaList, FaCalendarAlt, FaHashtag, FaInfoCircle,
+  FaFileSignature, FaList, FaCalendarAlt, FaHashtag,
   FaUserTie, FaUser, FaIdCard, FaMoneyBillWave, FaBalanceScale
 } from "react-icons/fa";
 
@@ -22,63 +26,38 @@ const toApiDate = (d) => {
   const v = m ? `${m[3]}-${m[2]}-${m[1]}` : d;
   return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
 };
-// تاريخ اليوم + اسم اليوم بالعربية
 const todayIso = () => {
   const t = new Date();
   const mm = String(t.getMonth() + 1).padStart(2, "0");
   const dd = String(t.getDate()).padStart(2, "0");
   return `${t.getFullYear()}-${mm}-${dd}`;
 };
-const dayNameAr = (dateStr) => {
+const dayNameLocalized = (dateStr, lang) => {
   try {
     const d = dateStr ? new Date(dateStr) : new Date();
-    const days = ["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
-    return days[d.getDay()];
+    return d.toLocaleDateString(lang || "ar", { weekday: "long" });
   } catch { return ""; }
 };
 
-/* === تنسيق أخطاء الخادم === */
+/* === تنسيق أخطاء الخادم مع i18n === */
 function formatServerErrors(data) {
   if (!data) return "";
-  const prettyKey = (k) => ({
-    non_field_errors: "عام",
-    contract_type: "نوع العقد",
-    lump_sum_mode: "تصنيف عقد المقطوعية",
-    tender_no: "رقم العقد",
-    contract_date: "تاريخ العقد",
-    owners: "الملاك",
-    contractor_name: "اسم المقاول",
-    contractor_trade_license: "الرخصة التجارية",
-    total_project_value: "قيمة الأعمال الإجمالية للمشروع",
-    total_bank_value: "قيمة أعمال تمويل البنك",
-    total_owner_value: "قيمة أعمال تمويل المالك",
-    project_duration_months: "مدة المشروع (بالأشهر)",
-    owner_includes_consultant: "يشمل أتعاب الاستشاري ضمن تمويل المالك",
-    owner_fee_design_percent: "نسبة أتعاب التصميم (المالك)",
-    owner_fee_supervision_percent: "نسبة أتعاب الإشراف (المالك)",
-    owner_fee_extra_mode: "نوع الأتعاب الإضافية (المالك)",
-    owner_fee_extra_value: "قيمة الأتعاب الإضافية (المالك)",
-    bank_includes_consultant: "يشمل أتعاب الاستشاري ضمن تمويل البنك",
-    bank_fee_design_percent: "نسبة أتعاب التصميم (البنك)",
-    bank_fee_supervision_percent: "نسبة أتعاب الإشراف (البنك)",
-    bank_fee_extra_mode: "نوع الأتعاب الإضافية (البنك)",
-    bank_fee_extra_value: "قيمة الأتعاب الإضافية (البنك)",
-  }[k] || k);
+  const tErr = (k) => i18n.t(`errors.${k}`, k);
 
   const lines = [];
   const walk = (value, path = []) => {
     if (Array.isArray(value)) {
       if (value.every(v => typeof v !== "object")) {
-        const key = path.length ? prettyKey(path.at(-1)) : "";
+        const key = path.length ? tErr(path.at(-1)) : "";
         lines.push(`• ${key ? key + ": " : ""}${value.map(String).join(" • ")}`);
         return;
       }
       value.forEach((item, i) => {
         const last = path.at(-1);
-        const label = last ? `${prettyKey(last)} [${i}]` : `[${i}]`;
+        const label = last ? `${tErr(last)} [${i}]` : `[${i}]`;
         if (typeof item !== "object") lines.push(`• ${label}: ${String(item)}`);
         else Object.entries(item || {}).forEach(([k, v]) =>
-          walk(v, [...path.slice(0, -1), `${label} → ${prettyKey(k)}`])
+          walk(v, [...path.slice(0, -1), `${label} → ${tErr(k)}`])
         );
       });
       return;
@@ -87,9 +66,9 @@ function formatServerErrors(data) {
       for (const [k, v] of Object.entries(value)) walk(v, [...path, k]);
       return;
     }
-    const key = path.length ? prettyKey(path.at(-1)) : "";
+    const key = path.length ? tErr(path.at(-1)) : "";
     const prefix = path.slice(0, -1)
-      .map((p) => (String(p).includes("→") ? p : prettyKey(p)))
+      .map((p) => (String(p).includes("→") ? p : tErr(p)))
       .filter(Boolean)
       .join(" → ");
     const fullKey = [prefix, key].filter(Boolean).join(" → ");
@@ -107,56 +86,113 @@ const num = (v, d = 0) => {
 const toYesNo = (b) => (b ? "yes" : "no");
 const toBool = (v) => v === true || v === "yes";
 
-/* === عرض مفاتيح المالك بتسميات عربية شائعة، وأي مفاتيح إضافية كما هي === */
-const prettyOwnerKey = (k) => ({
-  owner_name_ar: "الاسم (عربي)",
-  owner_name_en: "الاسم (English)",
-  owner_name: "اسم المالك",
-  nationality: "الجنسية",
-  id_number: "رقم الهوية",
-  id_issue_date: "تاريخ إصدار الهوية",
-  id_expiry_date: "تاريخ انتهاء الهوية",
-  right_hold_type: "نوع الحق",
-  share_possession: "الحصّة/الحيازة",
-  share_percent: "نسبة الملكية %",
-  phone: "الهاتف",
-  email: "البريد الإلكتروني",
-  address: "العنوان",
-}[k] || k);
+/* === تسميات الحقول (نترجم لو متوفر) === */
+const humanize = (s) =>
+  String(s || "")
+    .replace(/\./g, " · ")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+
+const labelForKey = (k) => {
+  const last = String(k).split(".").pop();
+  const tr = i18n.t(`errors.${last}`, last);
+  return tr === last ? humanize(k) : tr;
+};
+
+/* === عرض كل حقول المالك (بما فيها المتداخلة) === */
+const joinArr = (a) =>
+  Array.isArray(a) ? a.filter((v) => v != null && v !== "").join("، ") : a;
+
+const flattenEntries = (obj, prefix = "") => {
+  const out = [];
+  Object.entries(obj || {}).forEach(([k, v]) => {
+    if (v === "" || v === null || v === undefined) return;
+    const key = prefix ? `${prefix}.${k}` : k;
+
+    if (typeof v === "object" && v && !Array.isArray(v)) {
+      out.push(...flattenEntries(v, key));
+    } else {
+      out.push([key, joinArr(v)]);
+    }
+  });
+  return out;
+};
+
+// ترتيب تفضيلي لبعض الحقول الشائعة
+const PRIMARY_ORDER = [
+  "owner_name_ar",
+  "owner_name_en",
+  "owner_name",
+  "nationality",
+  "id_number",
+  "id_issue_date",
+  "id_expiry_date",
+  "phone",
+  "email",
+  "address",
+  "share_possession",
+  "right_hold_type",
+  "share_percent",
+];
+
+/* ===== View helper ===== */
+const ViewRow = ({ label, value, icon: Icon, tip }) => (
+  <Field label={label} icon={Icon}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span>{value !== undefined && value !== null && String(value) !== "" ? String(value) : "—"}</span>
+      {tip ? <InfoTip align="start" text={tip} /> : null}
+    </div>
+  </Field>
+);
 
 /* ============== المكون الرئيسي ============== */
 export default function ContractStep({ projectId, onPrev, onNext }) {
-  /* ====== قوائم ثابتة ====== */
-  const CONTRACT_TYPES = useMemo(
+  const { t, i18n: i18next } = useTranslation();
+  const isAR = i18next.language === "ar";
+  const navigate = useNavigate();
+
+  /* ====== قوائم ثابتة (تعتمد اللغة) ====== */
+  const CONTRACT_CLASSIFICATION = useMemo(
     () => ([
-      { value: "lump_sum", label: "عقد مقاولة بالمقطوعية" },
-      { value: "type_b",   label: "نوع عقد 2" },
-      { value: "type_c",   label: "نوع عقد 3" },
+      {
+        value: "housing_loan_program",
+        label: t("contract.classification.housing_loan_program.label"),
+        desc: t("contract.classification.housing_loan_program.desc"),
+      },
+      {
+        value: "private_funding",
+        label: t("contract.classification.private_funding.label"),
+        desc: t("contract.classification.private_funding.desc"),
+      },
     ]),
-    []
+    [t]
   );
 
-  const LUMP_SUM_MODES = useMemo(
+  const CONTRACT_TYPES = useMemo(
     () => ([
-      { value: "private_contract", label: "عقد خاص" },
-      { value: "housing_loan_program", label: "عقد مخصص لبرامج مشروع قرض الإسكان" },
+      { value: "lump_sum",      label: t("contract.types.lump_sum") },
+      { value: "percentage",    label: t("contract.types.percentage") },
+      { value: "design_build",  label: t("contract.types.design_build") },
+      { value: "re_measurement",label: t("contract.types.re_measurement") },
     ]),
-    []
+    [t]
   );
 
   const EXTRA_FEE_MODE = useMemo(
     () => ([
-      { value: "percent", label: "نسبة مئوية %" },
-      { value: "fixed",   label: "مبلغ مقطوع" },
+      { value: "percent", label: t("contract.fees.mode.percent") },
+      { value: "fixed",   label: t("contract.fees.mode.fixed") },
+      { value: "other",   label: t("contract.fees.mode.other") },
     ]),
-    []
+    [t]
   );
 
   /* ====== الحالة ====== */
   const [form, setForm] = useState({
+    // تصنيف العقد
+    contract_classification: "",
     // نوع العقد
     contract_type: "",
-    lump_sum_mode: "",
     // بيانات عامة
     tender_no: "",
     contract_date: "",
@@ -185,6 +221,7 @@ export default function ContractStep({ projectId, onPrev, onNext }) {
 
   const [existingId, setExistingId] = useState(null);
   const [errorMsg, setErrorMsg]   = useState("");
+  const [isView, setIsView] = useState(false);
   const setF = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
   /* ====== قراءة عقد موجود إن وجد ====== */
@@ -203,6 +240,7 @@ export default function ContractStep({ projectId, onPrev, onNext }) {
             owner_includes_consultant: toYesNo(s.owner_includes_consultant),
             bank_includes_consultant: toYesNo(s.bank_includes_consultant),
           }));
+          setIsView(true); // عند الرجوع للخطوة: اعرض View
         }
       } catch {}
     })();
@@ -218,7 +256,7 @@ export default function ContractStep({ projectId, onPrev, onNext }) {
           api.get(`projects/${projectId}/license/`),
         ]);
 
-        // SitePlan → owners (خذهم كما هم بالكامل، دون فلترة)
+        // SitePlan → owners (ننسخ كما هم)
         if (spRes.status === "fulfilled" && Array.isArray(spRes.value?.data) && spRes.value.data.length) {
           const sp = spRes.value.data[0];
           const ownersArr = Array.isArray(sp.owners) ? sp.owners : [];
@@ -258,31 +296,40 @@ export default function ContractStep({ projectId, onPrev, onNext }) {
 
   /* ====== تحققات وبناء الحمولة ====== */
   const buildPayload = () => {
-    if (!form.contract_type) throw new Error("يرجى اختيار نوع عقد المقاولة.");
-    if (form.contract_type === "lump_sum" && !form.lump_sum_mode) {
-      throw new Error("يرجى اختيار تصنيف عقد المقطوعية.");
-    }
-    if (!form.contract_date) throw new Error("يرجى تحديد تاريخ العقد.");
+    if (!form.contract_classification) throw new Error(t("contract.errors.select_classification"));
+    if (!form.contract_type) throw new Error(t("contract.errors.select_type"));
+    if (!form.contract_date) throw new Error(t("contract.errors.select_date"));
 
     const total = num(form.total_project_value, NaN);
-    const bank  = num(form.total_bank_value, NaN);
-    const owner = num(form.total_owner_value, NaN);
-    if (!Number.isFinite(total) || total <= 0) throw new Error("قيمة الأعمال الإجمالية للمشروع يجب أن تكون رقمًا أكبر من صفر.");
-    if (!Number.isFinite(bank) || bank < 0)  throw new Error("قيمة أعمال تمويل البنك يجب أن تكون رقمًا صفرًا فأعلى.");
-    if (owner !== Math.max(0, total - bank)) throw new Error("حساب تمويل المالك غير مطابق، وسيتم احتسابه آليًا من الإجمالي مطروحًا منه تمويل البنك.");
+    if (!Number.isFinite(total) || total <= 0) {
+      throw new Error(t("contract.errors.total_project_value_positive"));
+    }
 
-    // أرسل الملاك كما هم تمامًا
+    const isHousing = form.contract_classification === "housing_loan_program";
+    const bank  = num(form.total_bank_value, isHousing ? NaN : 0);
+    const owner = Math.max(0, total - bank);
+
+    if (isHousing) {
+      if (!Number.isFinite(bank) || bank < 0) {
+        throw new Error(t("contract.errors.bank_value_nonnegative"));
+      }
+      if (num(form.total_owner_value, NaN) !== owner) {
+        throw new Error(t("contract.errors.owner_value_autocalc"));
+      }
+    }
+
+    // نرسل الملاك كما هم تمامًا (أي حقول موجودة ستذهب للسيرفر)
     return {
+      contract_classification: form.contract_classification,
       contract_type: form.contract_type,
-      lump_sum_mode: form.contract_type === "lump_sum" ? form.lump_sum_mode : "",
       tender_no: form.tender_no || "",
       contract_date: toApiDate(form.contract_date),
       owners: form.owners || [],
       contractor_name: form.contractor_name || "",
       contractor_trade_license: form.contractor_trade_license || "",
       total_project_value: total,
-      total_bank_value: bank,
-      total_owner_value: Math.max(0, total - bank),
+      total_bank_value: isHousing ? bank : 0,
+      total_owner_value: isHousing ? owner : Math.max(0, total - 0),
       project_duration_months: num(form.project_duration_months, 0),
       owner_includes_consultant: toBool(form.owner_includes_consultant),
       owner_fee_design_percent: num(form.owner_fee_design_percent, 0),
@@ -299,38 +346,41 @@ export default function ContractStep({ projectId, onPrev, onNext }) {
 
   const save = async () => {
     if (!projectId) {
-      setErrorMsg("افتح المعالج من مشروع محدد ليتم الحفظ على الخادم.");
+      setErrorMsg(t("open_specific_project_to_save"));
       return;
     }
     try {
       const payload = buildPayload();
-      if (existingId) await api.patch(`projects/${projectId}/contract/${existingId}/`, payload);
-      else await api.post(`projects/${projectId}/contract/`, payload);
+      if (existingId) {
+        await api.patch(`projects/${projectId}/contract/${existingId}/`, payload);
+      } else {
+        const { data: created } = await api.post(`projects/${projectId}/contract/`, payload);
+        if (created?.id) setExistingId(created.id);
+      }
       setErrorMsg("");
+      setIsView(true); // ← التحويل إلى عرض بعد الحفظ
+
+      // لو في onNext (داخل الـ Wizard) هنمشي الفلو،
+      // لو مش موجود → نروح لقائمة المشاريع مباشرة
       if (onNext) onNext();
+      else navigate("/projects");
     } catch (err) {
       const serverData = err?.response?.data;
       const formatted = formatServerErrors(serverData);
-      const fallback = err?.message || (serverData ? JSON.stringify(serverData, null, 2) : "تعذّر الحفظ");
+      const fallback = err?.message || (serverData ? JSON.stringify(serverData, null, 2) : t("save_failed"));
       setErrorMsg(formatted || fallback);
     }
   };
 
-  /* ====== الواجهة ====== */
-  const showLumpSumMode = form.contract_type === "lump_sum";
+  /* ====== اشتقاقات العرض ====== */
+  const isHousing = form.contract_classification === "housing_loan_program";
   const showOwnerFees   = form.owner_includes_consultant === "yes";
   const showBankFees    = form.bank_includes_consultant === "yes";
 
-  // ترتيب عرض شائع لبعض المفاتيح ثم أي مفاتيح إضافية
-  const ownerKeyOrder = [
-    "owner_name_ar","owner_name_en","owner_name",
-    "nationality","id_number","id_issue_date","id_expiry_date",
-    "share_percent","right_hold_type","share_possession",
-    "phone","email","address"
-  ];
+  const finishLabel = isAR ? "إنهاء" : "Finish";
 
   return (
-    <WizardShell icon={FaFileSignature} title="العقد">
+    <WizardShell icon={FaFileSignature} title={`📄 ${t("contract.title")}`}>
       {/* مودال الخطأ */}
       {errorMsg && (
         <div
@@ -338,229 +388,405 @@ export default function ContractStep({ projectId, onPrev, onNext }) {
           aria-modal="true"
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.35)", zIndex: 2000, display: "grid", placeItems: "center" }}
         >
-          <div className="card" style={{ maxWidth: 720, width: "92%", direction: "rtl" }}>
+          <div className="card" style={{ maxWidth: 720, width: "92%", direction: isAR ? "rtl" : "ltr" }}>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <h3 style={{ margin: 0 }}>تنبيه ⚠️</h3>
+              <h3 style={{ margin: 0 }}>{t("warning")} ⚠️</h3>
             </div>
             <div className="alert error" style={{ marginBottom: 12 }}>
-              <div className="title">خطأ أثناء الحفظ</div>
+              <div className="title">{t("save_error")}</div>
             </div>
             <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit", fontSize: "18px", lineHeight: 1.7 }}>
               {errorMsg}
             </pre>
             <div className="row" style={{ justifyContent: "flex-start", marginTop: 16 }}>
-              <button className="btn" type="button" onClick={() => setErrorMsg("")}>تم</button>
+              <button className="btn" type="button" onClick={() => setErrorMsg("")}>{t("ok")}</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* نوع العقد */}
-      <h4>نوع عقد المقاولة</h4>
-      <div className="form-grid cols-3">
-        <Field label="نوع العقد" icon={FaList}>
-          <RtlSelect
-            className="rtl-select"
-            options={CONTRACT_TYPES}
-            value={form.contract_type}
-            onChange={(v) => setF("contract_type", v)}
-            placeholder="اختر نوع العقد"
-          />
-        </Field>
+      {/* زر تعديل يظهر في وضع العرض */}
+      {isView && (
+        <div className="row" style={{ justifyContent: isAR ? "flex-start" : "flex-end", marginBottom: 12 }}>
+          <button type="button" className="btn secondary" onClick={() => setIsView(false)}>
+            ✏️ {t("edit")}
+          </button>
+        </div>
+      )}
 
-        {showLumpSumMode && (
-          <Field label="تصنيف عقد المقطوعية">
-            <div className="chips">
-              {LUMP_SUM_MODES.map(m => (
+      {/* 1) تصنيف العقد */}
+      <h4>1) {t("contract.sections.classification")}</h4>
+      {isView ? (
+        <div className="card">
+          <div style={{ padding: 8, display: "flex", alignItems: "center", gap: 8 }}>
+            <span>{CONTRACT_CLASSIFICATION.find(m => m.value === form.contract_classification)?.label || "—"}</span>
+            {form.contract_classification ? (
+              <InfoTip
+                align="start"
+                text={
+                  form.contract_classification === "housing_loan_program"
+                    ? t("contract.classification.housing_loan_program.desc")
+                    : t("contract.classification.private_funding.desc")
+                }
+              />
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="row" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <div className="chips" style={{ flex: "1 1 auto" }}>
+              {CONTRACT_CLASSIFICATION.map((m) => (
                 <button
                   key={m.value}
                   type="button"
-                  className={`chip ${form.lump_sum_mode === m.value ? "active" : ""}`}
-                  onClick={() => setF("lump_sum_mode", m.value)}
+                  className={`chip ${form.contract_classification === m.value ? "active" : ""}`}
+                  onClick={() => setF("contract_classification", m.value)}
+                  title={m.desc}
                 >
                   {m.label}
                 </button>
               ))}
             </div>
-            <div className="mini mt-4"><FaInfoCircle aria-hidden /> اختر واحد فقط.</div>
-          </Field>
-        )}
-      </div>
+            {form.contract_classification ? (
+              <InfoTip
+                align="start"
+                text={
+                  form.contract_classification === "housing_loan_program"
+                    ? t("contract.classification.housing_loan_program.desc")
+                    : t("contract.classification.private_funding.desc")
+                }
+              />
+            ) : null}
+          </div>
+        </>
+      )}
 
-      {/* بيانات عامة */}
-      <h4 className="mt-16">بيانات العقد</h4>
-      <div className="form-grid cols-3">
-        <Field label="رقم  العقد" icon={FaHashtag}>
-          <input className="input" value={form.tender_no} onChange={(e) => setF("tender_no", e.target.value)} />
-        </Field>
-        <Field label="تاريخ العقد" icon={FaCalendarAlt}>
-          <input
-            className="input"
-            type="date"
-            value={form.contract_date || ""}
-            onChange={(e) => setF("contract_date", e.target.value)}
+      {/* 2) نوع العقد */}
+      <h4 className="mt-16">2) {t("contract.sections.type")}</h4>
+      {isView ? (
+        <div className="form-grid cols-3">
+          <ViewRow
+            label={t("contract.fields.contract_type")}
+            value={CONTRACT_TYPES.find((x) => x.value === form.contract_type)?.label || form.contract_type}
+            icon={FaList}
           />
-          {form.contract_date && (
-            <div className="mini mt-4">
-              <FaInfoCircle aria-hidden /> <span>اليوم: {dayNameAr(form.contract_date)}</span>
-            </div>
-          )}
-        </Field>
-      </div>
+        </div>
+      ) : (
+        <div className="form-grid cols-3">
+          <Field label={t("contract.fields.contract_type")} icon={FaList}>
+            <RtlSelect
+              className="rtl-select"
+              dir={isAR ? "rtl" : "ltr"}
+              options={CONTRACT_TYPES}
+              value={form.contract_type}
+              onChange={(v) => setF("contract_type", v)}
+              placeholder={t("contract.placeholders.select_contract_type")}
+            />
+          </Field>
+        </div>
+      )}
 
-      {/* الأطراف */}
-      <h4 className="mt-16">الأطراف</h4>
+      {/* 3) بيانات العقد */}
+      <h4 className="mt-16">3) {t("contract.sections.details")}</h4>
+      {isView ? (
+        <div className="form-grid cols-3">
+          <ViewRow label={t("contract.fields.contract_number")} value={form.tender_no} icon={FaHashtag}
+            tip={isHousing ? t("contract.notes.housing_tender_info") : undefined}
+          />
+          <ViewRow
+            label={t("contract.fields.contract_date")}
+            value={form.contract_date}
+            icon={FaCalendarAlt}
+            tip={form.contract_date ? `${t("contract.labels.day")}: ${dayNameLocalized(form.contract_date, i18next.language)}` : undefined}
+          />
+        </div>
+      ) : (
+        <div className="form-grid cols-3">
+          <Field label={t("contract.fields.contract_number")} icon={FaHashtag}>
+            <div className="row" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                className="input"
+                value={form.tender_no}
+                onChange={(e) => setF("tender_no", e.target.value)}
+                placeholder={t("contract.placeholders.contract_number")}
+              />
+              {isHousing ? <InfoTip align="start" text={t("contract.notes.housing_tender_info")} /> : null}
+            </div>
+          </Field>
+
+          <Field label={t("contract.fields.contract_date")} icon={FaCalendarAlt}>
+            <div className="row" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                className="input"
+                type="date"
+                value={form.contract_date || ""}
+                onChange={(e) => setF("contract_date", e.target.value)}
+              />
+              {form.contract_date ? (
+                <InfoTip
+                  align="start"
+                  text={`${t("contract.labels.day")}: ${dayNameLocalized(form.contract_date, i18next.language)}`}
+                />
+              ) : null}
+            </div>
+          </Field>
+        </div>
+      )}
+
+      {/* 4) أطراف العقد */}
+      <h4 className="mt-16">4) {t("contract.sections.parties")}</h4>
       <div className="form-grid cols-2">
-        <Field label="الطرف الأول (المالك)" icon={FaUser}>
+        <Field label={t("contract.fields.first_party_owner")} icon={FaUser}>
           {form.owners?.length ? (
             <div className="mini" style={{ lineHeight: 1.9 }}>
               {form.owners.map((o, i) => {
-                // جهّز مفاتيح العرض: أولًا المتعارف عليها ثم أي مفاتيح إضافية
-                const known = ownerKeyOrder.filter((k) => o[k] !== undefined);
-                const extras = Object.keys(o).filter(
-                  (k) =>
-                    !known.includes(k) &&
-                    k !== "id_attachment" &&
-                    typeof o[k] !== "object"
-                );
-                const keysToShow = [...known, ...extras];
+                const entries = flattenEntries(o);
+                const sorted = entries.sort(([kA], [kB]) => {
+                  const a = PRIMARY_ORDER.indexOf(kA.split(".")[0]);
+                  const b = PRIMARY_ORDER.indexOf(kB.split(".")[0]);
+                  if (a !== -1 || b !== -1) {
+                    return (a === -1 ? 999 : a) - (b === -1 ? 999 : b);
+                  }
+                  return kA.localeCompare(kB);
+                });
 
                 return (
                   <div key={i} style={{ padding: "8px 10px", border: "1px solid #eee", borderRadius: 6, marginBottom: 8 }}>
-                    {keysToShow.map((k) => {
-                      const v = o[k];
-                      if (v === "" || v === null || v === undefined) return null;
-                      return (
-                        <div key={k}>
-                          <strong>{prettyOwnerKey(k)}:</strong> {String(v)}
-                        </div>
-                      );
-                    })}
+                    {sorted.map(([k, v]) => (
+                      <div key={k}>
+                        <strong>{labelForKey(k)}:</strong> {String(v)}
+                      </div>
+                    ))}
                   </div>
                 );
               })}
             </div>
           ) : (
-            <div className="info-note"><FaInfoCircle aria-hidden /> <div>لا توجد بيانات ملاك — تأكد من حفظ مخطط الأرض.</div></div>
+            <div className="row" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <InfoTip align="start" text={t("contract.notes.no_owners_siteplan")} />
+            </div>
           )}
         </Field>
 
-        <Field label="الطرف الثاني (المقاول)" icon={FaUserTie}>
-          <div className="row" style={{ gap: 8, alignItems: "center" }}>
-            <input className="input" placeholder="اسم المقاول" value={form.contractor_name} onChange={(e) => setF("contractor_name", e.target.value)} />
-          </div>
-          <div className="row mt-6" style={{ gap: 8, alignItems: "center" }}>
-            <FaIdCard aria-hidden />
-            <input className="input" placeholder="الرخصة التجارية" value={form.contractor_trade_license} onChange={(e) => setF("contractor_trade_license", e.target.value)} />
-          </div>
-          <div className="mini mt-4"><FaInfoCircle aria-hidden /> إذا كانت الرخصة والاسم متوفرين من الرخصة سيتم ملؤهما تلقائيًا.</div>
+        <Field label={t("contract.fields.second_party_contractor")} icon={FaUserTie}>
+          {isView ? (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span>{form.contractor_name || "—"}</span>
+                <InfoTip align="start" text={t("contract.notes.autofill_from_license")} />
+              </div>
+              <div className="row mt-6" style={{ gap: 8, alignItems: "center" }}>
+                <FaIdCard aria-hidden /> <div>{form.contractor_trade_license || "—"}</div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="row" style={{ gap: 8, alignItems: "center" }}>
+                <input
+                  className="input"
+                  placeholder={t("contract.placeholders.contractor_name")}
+                  value={form.contractor_name}
+                  onChange={(e) => setF("contractor_name", e.target.value)}
+                />
+                <InfoTip align="start" text={t("contract.notes.autofill_from_license")} />
+              </div>
+              <div className="row mt-6" style={{ gap: 8, alignItems: "center" }}>
+                <FaIdCard aria-hidden />
+                <input
+                  className="input"
+                  placeholder={t("contract.placeholders.trade_license")}
+                  value={form.contractor_trade_license}
+                  onChange={(e) => setF("contractor_trade_license", e.target.value)}
+                />
+              </div>
+            </>
+          )}
         </Field>
       </div>
 
-      {/* قيم المشروع */}
-      <h4 className="mt-16">القيم والمدة</h4>
-      <div className="form-grid cols-4">
-        <Field label="قيمة الأعمال الإجمالية للمشروع" icon={FaMoneyBillWave}>
-          <input className="input" type="number" min="0" value={form.total_project_value} onChange={(e) => setF("total_project_value", e.target.value)} />
-        </Field>
-        <Field label="قيمة أعمال تمويل البنك الإجمالية" icon={FaMoneyBillWave}>
-          <input className="input" type="number" min="0" value={form.total_bank_value} onChange={(e) => setF("total_bank_value", e.target.value)} />
-        </Field>
-        <Field label="قيمة أعمال تمويل المالك الإجمالية (محسوبة)" icon={FaBalanceScale}>
-          <input className="input" type="number" value={form.total_owner_value} readOnly />
-        </Field>
-        <Field label="مدة المشروع (بالأشهر)" icon={FaHashtag}>
-          <input className="input" type="number" min="0" value={form.project_duration_months} onChange={(e) => setF("project_duration_months", e.target.value)} />
-        </Field>
-      </div>
+      {/* 5) قيمة العقد والمدة */}
+      <h4 className="mt-16">5) {t("contract.sections.value_duration")}</h4>
+      {isView ? (
+        <div className="form-grid cols-4">
+          <ViewRow label={t("contract.fields.total_project_value")} value={form.total_project_value} icon={FaMoneyBillWave} />
+          {isHousing && (
+            <>
+              <ViewRow label={t("contract.fields.total_bank_value")} value={form.total_bank_value} icon={FaMoneyBillWave} />
+              <ViewRow label={t("contract.fields.total_owner_value_calc")} value={form.total_owner_value} icon={FaBalanceScale} />
+            </>
+          )}
+          <ViewRow label={t("contract.fields.project_duration_months")} value={form.project_duration_months} icon={FaHashtag} />
+        </div>
+      ) : (
+        <div className="form-grid cols-4">
+          <Field label={t("contract.fields.total_project_value")} icon={FaMoneyBillWave}>
+            <input
+              className="input"
+              type="number"
+              min="0"
+              value={form.total_project_value}
+              onChange={(e) => setF("total_project_value", e.target.value)}
+              placeholder="0"
+            />
+          </Field>
 
-      {/* أتعاب الاستشاري — تمويل المالك */}
-      <h4 className="mt-16">أتعاب الاستشاري ضمن مبلغ تمويل المالك؟</h4>
-      <div className="form-grid cols-3">
-        <Field label="يشمل أتعاب الاستشاري؟">
-          <div className="chips">
-            {["no","yes"].map(v => (
-              <button
-                key={v}
-                type="button"
-                className={`chip ${form.owner_includes_consultant === v ? "active" : ""}`}
-                onClick={() => setF("owner_includes_consultant", v)}
-              >
-                {v === "yes" ? "نعم" : "لا"}
-              </button>
-            ))}
-          </div>
-        </Field>
+          {isHousing && (
+            <>
+              <Field label={t("contract.fields.total_bank_value")} icon={FaMoneyBillWave}>
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  value={form.total_bank_value}
+                  onChange={(e) => setF("total_bank_value", e.target.value)}
+                  placeholder="0"
+                />
+              </Field>
+              <Field label={t("contract.fields.total_owner_value_calc")} icon={FaBalanceScale}>
+                <input className="input" type="number" value={form.total_owner_value} readOnly />
+              </Field>
+            </>
+          )}
 
-        {showOwnerFees && (
-          <>
-            <Field label="نسبة أتعاب التصميم (%)">
-              <input className="input" type="number" min="0" max="100" value={form.owner_fee_design_percent} onChange={(e) => setF("owner_fee_design_percent", e.target.value)} />
-            </Field>
-            <Field label="نسبة أتعاب الإشراف (%)">
-              <input className="input" type="number" min="0" max="100" value={form.owner_fee_supervision_percent} onChange={(e) => setF("owner_fee_supervision_percent", e.target.value)} />
-            </Field>
-            <Field label="نوع أتعاب إضافية">
-              <RtlSelect className="rtl-select" options={EXTRA_FEE_MODE} value={form.owner_fee_extra_mode} onChange={(v) => setF("owner_fee_extra_mode", v)} />
-            </Field>
-            <Field label="قيمة الأتعاب الإضافية">
-              <input
-                className="input"
-                type="number"
-                min="0"
-                value={form.owner_fee_extra_value}
-                onChange={(e) => setF("owner_fee_extra_value", e.target.value)}
-                placeholder={form.owner_fee_extra_mode === "percent" ? "نسبة %" : "مبلغ"}
-              />
-            </Field>
-          </>
-        )}
-      </div>
+          <Field label={t("contract.fields.project_duration_months")} icon={FaHashtag}>
+            <input
+              className="input"
+              type="number"
+              min="0"
+              value={form.project_duration_months}
+              onChange={(e) => setF("project_duration_months", e.target.value)}
+              placeholder="0"
+            />
+          </Field>
+        </div>
+      )}
 
-      {/* أتعاب الاستشاري — تمويل البنك */}
-      <h4 className="mt-16">أتعاب الاستشاري ضمن مبلغ تمويل البنك؟</h4>
-      <div className="form-grid cols-3">
-        <Field label="يشمل أتعاب الاستشاري؟">
-          <div className="chips">
-            {["no","yes"].map(v => (
-              <button
-                key={v}
-                type="button"
-                className={`chip ${form.bank_includes_consultant === v ? "active" : ""}`}
-                onClick={() => setF("bank_includes_consultant", v)}
-              >
-                {v === "yes" ? "نعم" : "لا"}
-              </button>
-            ))}
-          </div>
-        </Field>
+      {/* 6) أتعاب الاستشاري ضمن مبلغ العقد */}
+      <h4 className="mt-16">6) {t("contract.sections.consultant_fees")}</h4>
 
-        {showBankFees && (
-          <>
-            <Field label="نسبة أتعاب التصميم (%)">
-              <input className="input" type="number" min="0" max="100" value={form.bank_fee_design_percent} onChange={(e) => setF("bank_fee_design_percent", e.target.value)} />
-            </Field>
-            <Field label="نسبة أتعاب الإشراف (%)">
-              <input className="input" type="number" min="0" max="100" value={form.bank_fee_supervision_percent} onChange={(e) => setF("bank_fee_supervision_percent", e.target.value)} />
-            </Field>
-            <Field label="نوع أتعاب إضافية">
-              <RtlSelect className="rtl-select" options={EXTRA_FEE_MODE} value={form.bank_fee_extra_mode} onChange={(v) => setF("bank_fee_extra_mode", v)} />
-            </Field>
-            <Field label="قيمة الأتعاب الإضافية">
-              <input
-                className="input"
-                type="number"
-                min="0"
-                value={form.bank_fee_extra_value}
-                onChange={(e) => setF("bank_fee_extra_value", e.target.value)}
-                placeholder={form.bank_fee_extra_mode === "percent" ? "نسبة %" : "مبلغ"}
-              />
-            </Field>
-          </>
-        )}
-      </div>
+      {/* أتعاب — تمويل المالك */}
+      <h5 className="mt-8">✅ {t("contract.fees.owner.title")}</h5>
+      {isView ? (
+        <div className="form-grid cols-3">
+          <ViewRow label={t("contract.fees.include_consultant")} value={form.owner_includes_consultant === "yes" ? t("yes") : t("no")} />
+          {showOwnerFees && (
+            <>
+              <ViewRow label={t("contract.fees.design_percent")} value={form.owner_fee_design_percent} />
+              <ViewRow label={t("contract.fees.supervision_percent")} value={form.owner_fee_supervision_percent} />
+              <ViewRow label={t("contract.fees.extra_type")} value={EXTRA_FEE_MODE.find(m => m.value === form.owner_fee_extra_mode)?.label || form.owner_fee_extra_mode} />
+              <ViewRow label={t("contract.fees.extra_value")} value={form.owner_fee_extra_value} />
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="form-grid cols-3">
+          <Field label={t("contract.fees.include_consultant")}>
+            <div className="chips">
+              {["no","yes"].map(v => (
+                <button
+                  key={v}
+                  type="button"
+                  className={`chip ${form.owner_includes_consultant === v ? "active" : ""}`}
+                  onClick={() => setF("owner_includes_consultant", v)}
+                >
+                  {v === "yes" ? t("yes") : t("no")}
+                </button>
+              ))}
+            </div>
+          </Field>
 
-      <StepActions onPrev={onPrev} onNext={save} />
+          {showOwnerFees && (
+            <>
+              <Field label={t("contract.fees.design_percent")}>
+                <input className="input" type="number" min="0" max="100" value={form.owner_fee_design_percent} onChange={(e) => setF("owner_fee_design_percent", e.target.value)} />
+              </Field>
+              <Field label={t("contract.fees.supervision_percent")}>
+                <input className="input" type="number" min="0" max="100" value={form.owner_fee_supervision_percent} onChange={(e) => setF("owner_fee_supervision_percent", e.target.value)} />
+              </Field>
+              <Field label={t("contract.fees.extra_type")}>
+                <RtlSelect className="rtl-select" dir={isAR ? "rtl" : "ltr"} options={EXTRA_FEE_MODE} value={form.owner_fee_extra_mode} onChange={(v) => setF("owner_fee_extra_mode", v)} />
+              </Field>
+              <Field label={t("contract.fees.extra_value")}>
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  value={form.owner_fee_extra_value}
+                  onChange={(e) => setF("owner_fee_extra_value", e.target.value)}
+                  placeholder={form.owner_fee_extra_mode === "percent" ? t("contract.fees.percentage_ph") : t("contract.fees.amount_ph")}
+                />
+              </Field>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* أتعاب — تمويل البنك */}
+      <h5 className="mt-16">✅ {t("contract.fees.bank.title")}</h5>
+      {isView ? (
+        <div className="form-grid cols-3">
+          <ViewRow label={t("contract.fees.include_consultant")} value={form.bank_includes_consultant === "yes" ? t("yes") : t("no")} />
+          {showBankFees && (
+            <>
+              <ViewRow label={t("contract.fees.design_percent")} value={form.bank_fee_design_percent} />
+              <ViewRow label={t("contract.fees.supervision_percent")} value={form.bank_fee_supervision_percent} />
+              <ViewRow label={t("contract.fees.extra_type")} value={EXTRA_FEE_MODE.find(m => m.value === form.bank_fee_extra_mode)?.label || form.bank_fee_extra_mode} />
+              <ViewRow label={t("contract.fees.extra_value")} value={form.bank_fee_extra_value} />
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="form-grid cols-3">
+          <Field label={t("contract.fees.include_consultant")}>
+            <div className="chips">
+              {["no","yes"].map(v => (
+                <button
+                  key={v}
+                  type="button"
+                  className={`chip ${form.bank_includes_consultant === v ? "active" : ""}`}
+                  onClick={() => setF("bank_includes_consultant", v)}
+                >
+                  {v === "yes" ? t("yes") : t("no")}
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          {showBankFees && (
+            <>
+              <Field label={t("contract.fees.design_percent")}>
+                <input className="input" type="number" min="0" max="100" value={form.bank_fee_design_percent} onChange={(e) => setF("bank_fee_design_percent", e.target.value)} />
+              </Field>
+              <Field label={t("contract.fees.supervision_percent")}>
+                <input className="input" type="number" min="0" max="100" value={form.bank_fee_supervision_percent} onChange={(e) => setF("bank_fee_supervision_percent", e.target.value)} />
+              </Field>
+              <Field label={t("contract.fees.extra_type")}>
+                <RtlSelect className="rtl-select" dir={isAR ? "rtl" : "ltr"} options={EXTRA_FEE_MODE} value={form.bank_fee_extra_mode} onChange={(v) => setF("bank_fee_extra_mode", v)} />
+              </Field>
+              <Field label={t("contract.fees.extra_value")}>
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  value={form.bank_fee_extra_value}
+                  onChange={(e) => setF("bank_fee_extra_value", e.target.value)}
+                  placeholder={form.bank_fee_extra_mode === "percent" ? t("contract.fees.percentage_ph") : t("contract.fees.amount_ph")}
+                />
+              </Field>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* (تم حذف بلوك "Tooltips توضيحية" واستبدلناه بإضافات InfoTip بجانب الحقول نفسها) */}
+
+      <StepActions
+        onPrev={onPrev}
+        onNext={save}
+        nextLabel={finishLabel}        // ← زر "إنهاء"
+        nextClassName="primary"
+      />
     </WizardShell>
   );
 }

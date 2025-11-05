@@ -1,15 +1,16 @@
-// src/pages/ViewLicense.jsx
+// src/pages/ViewSummary.jsx
 import { Link, useParams } from "react-router-dom";
-import LicenseStep from "./wizard/steps/LicenseStep";
+import ContractFinancialSummary from "./wizard/components/ContractFinancialSummary";
 
-export default function ViewLicense() {
+export default function ViewSummary() {
   const { projectId } = useParams();
+
   return (
     <div className="container">
       <div className="card card--page">
         <div className="content">
           <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-            <h2 style={{ margin: 0 }}>📄 ترخيص البناء — عرض</h2>
+            <h2 style={{ margin: 0 }}>📊 الملخص المالي للمشروع</h2>
             <div className="row" style={{ gap: 8 }}>
               <Link className="btn secondary" to={`/projects/${projectId}`}>لوحة المشروع ←</Link>
               <Link className="btn" to={`/projects/${projectId}/wizard`}>فتح المعالج</Link>
@@ -17,8 +18,7 @@ export default function ViewLicense() {
           </div>
 
           <div className="mt-12">
-            {/* نفس خطوة الإدخال – ستجلب بياناتها وتعرضها في وضع View تلقائيًا */}
-            <LicenseStep projectId={projectId} onPrev={null} onNext={null} />
+            <ContractFinancialSummary projectId={projectId} />
           </div>
         </div>
       </div>

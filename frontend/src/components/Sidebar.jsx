@@ -1,5 +1,6 @@
 // src/components/Sidebar.jsx
 import { Link, useLocation } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { FaHome, FaFolderOpen } from "react-icons/fa";
 
 function SideItem({ to, icon: Icon, label, active }) {
@@ -13,16 +14,17 @@ function SideItem({ to, icon: Icon, label, active }) {
 
 export default function Sidebar() {
   const { pathname } = useLocation();
+  const { t } = useTranslation();
 
   const items = [
-    { to: "/", label: "الرئيسية", icon: FaHome },
-    { to: "/projects", label: "المشاريع", icon: FaFolderOpen },
+    { to: "/", label: t("sidebar_home"), icon: FaHome },
+    { to: "/projects", label: t("sidebar_projects"), icon: FaFolderOpen },
   ];
 
   return (
     <aside className="sidebar">
-      <div className="side-brand">القائمة</div>
-      <div className="side-section">التنقل</div>
+      <div className="side-brand">{t("sidebar_title")}</div>
+      <div className="side-section">{t("sidebar_nav")}</div>
       <nav className="side-nav">
         {items.map(({ to, label, icon }) => (
           <SideItem

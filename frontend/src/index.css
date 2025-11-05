@@ -433,3 +433,61 @@ textarea.input{ min-height:110px; resize: vertical }
   .form-grid.cols-3{ grid-template-columns: 1fr } /* NEW */
   .form-grid.cols-2{ grid-template-columns: 1fr } /* NEW */
 }
+/* ================= Projects Page ================= */
+:root{
+  --bg:#fff; --ink:#111; --muted:#6b7280;
+  --border:#e5e7eb; --border-strong:#d1d5db;
+  --hover:#f8fafc; --primary:#1565c0; --primary-ink:#fff;
+  --ok-bg:#e8f5e9; --ok-ink:#2e7d32;
+  --off-bg:#f3f4f6; --off-ink:#374151;
+}
+
+.prj-container{max-width:1280px;margin:0 auto;padding:16px;}
+.prj-card{background:var(--bg);border:1px solid var(--border);border-radius:12px;}
+.prj-page{padding:16px 16px 24px;}
+.prj-loading{padding:60px;text-align:center;}
+.prj-loading__text{font-size:18px}
+
+.prj-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:12px;border-bottom:1px solid var(--border);}
+.prj-title{display:flex;align-items:center;gap:8px;margin:0;}
+.prj-title__icon{font-size:22px}
+.prj-subtitle{margin:0;color:var(--muted);font-size:14px}
+
+.prj-alert{background:#fff7ed;border:1px solid #fed7aa;color:#92400e;padding:14px 16px;border-radius:10px}
+.prj-alert__title{font-weight:700}
+
+.prj-table__wrapper{overflow:auto;margin-top:20px}
+.prj-table{width:100%;border-collapse:separate;border-spacing:0;font-size:14px}
+.prj-table thead th{
+  text-align:right;background:#fafafa;color:#111;
+  border-bottom:1px solid var(--border-strong);
+  padding:12px 14px;font-weight:700;white-space:nowrap;
+}
+.prj-table tbody td{padding:14px;border-bottom:1px solid var(--border);}
+.prj-table tbody tr:hover{background:var(--hover)}
+.prj-row--active td{background:#fcfffc}
+
+.prj-foot{padding:12px 14px}
+.prj-muted{color:var(--muted)}
+.prj-nowrap{white-space:nowrap}
+
+.prj-cell__main{display:flex;flex-direction:column;gap:2px}
+.prj-cell__title{font-weight:700;color:var(--ink)}
+.prj-cell__sub{font-size:12px}
+
+.prj-code{
+  background:#0b12201a;border:1px solid var(--border);
+  padding:3px 8px;border-radius:6px;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.prj-badges{display:flex;flex-wrap:wrap;gap:6px}
+.prj-badge{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid var(--border);font-size:12px}
+.prj-badge.is-on{background:var(--ok-bg);color:var(--ok-ink);border-color:#a5d6a7}
+.prj-badge.is-off{background:#f7f7f7;color:#777;border-color:#ddd}
+
+.prj-actions{display:flex;gap:8px;align-items:center}
+.prj-btn{display:inline-flex;align-items:center;justify-content:center;height:36px;padding:0 14px;border-radius:8px;border:1px solid var(--border-strong);font-weight:600;text-decoration:none}
+.prj-btn--primary{background:var(--primary);color:var(--primary-ink);border-color:var(--primary)}
+.prj-btn--primary:hover{filter:brightness(.95)}
+.prj-btn--ghost{background:#f5f5f5;color:#111}
+.prj-btn--ghost:hover{background:#ededed}

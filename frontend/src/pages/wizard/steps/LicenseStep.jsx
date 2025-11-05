@@ -1,15 +1,35 @@
 // src/pages/wizard/steps/LicenseStep.jsx
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../../../services/api";
 import Field from "../components/Field";
 import WizardShell from "../components/WizardShell";
 import StepActions from "../components/StepActions";
 import RtlSelect from "../../../components/RtlSelect";
+import InfoTip from "../components/InfoTip";
 
 import {
-  FaIdCard, FaHashtag, FaClipboardList, FaCalendarAlt, FaTools, FaUser,
+  FaIdCard, FaHashtag, FaCalendarAlt, FaTools, FaUser,
   FaCity, FaMapMarkerAlt, FaSitemap, FaInfoCircle, FaRulerCombined, FaPaperclip
 } from "react-icons/fa";
+
+/* ==== تحويلات عربي/إنجليزي للاستخدامات (عرض فقط) ==== */
+const EN_AR = { Residential: "سكني", Commercial: "تجاري", Government: "حكومي", Investment: "استثماري" };
+const AR_EN = Object.fromEntries(Object.entries(EN_AR).map(([en, ar]) => [ar, en]));
+const toLocalizedUse = (v, lang) => (!v ? "" : lang === "ar" ? (EN_AR[v] || v) : (AR_EN[v] || v));
+
+/* ==== تحويلات التاريخ ==== */
+const toInputDate = (d) => {
+  if (!d) return "";
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(d);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : d;
+};
+const toApiDate = (d) => {
+  if (!d) return null;
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(d);
+  const v = m ? `${m[3]}-${m[2]}-${m[1]}` : d;
+  return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+};
 
 /* ==== تنسيق أخطاء الخادم ==== */
 function formatServerErrors(data) {
@@ -42,6 +62,7 @@ function formatServerErrors(data) {
     technical_decision_ref: "مرجع القرار الفني",
     technical_decision_date: "تاريخ القرار الفني",
     license_notes: "ملاحظات",
+    owners: "الملاك",
   }[k] || k);
 
   const lines = [];
@@ -80,87 +101,66 @@ function formatServerErrors(data) {
   return lines.join("\n");
 }
 
-/* ==== تواريخ (نفس أسلوب SitePlanStep) ==== */
-const toInputDate = (d) => {
-  if (!d) return "";
-  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(d); // dd/mm/yyyy
-  return m ? `${m[3]}-${m[2]}-${m[1]}` : d;        // yyyy-mm-dd
-};
-
-// تطبيع لواجهة البرمجة: إرجاع YYYY-MM-DD أو null عند الفراغ
-const toApiDate = (d) => {
-  if (!d) return null;
-  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(d); // dd/mm/yyyy
-  const v = m ? `${m[3]}-${m[2]}-${m[1]}` : d;
-  return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
-};
-
-/* ==== خرائط تحويل استخدامات EN -> AR ==== */
-const EN_AR = {
-  Residential: "سكني",
-  Commercial: "تجاري",
-  Government: "حكومي",
-  Investment: "استثماري",
-};
-const toAr = (v) => (v && EN_AR[v]) || v || "";
+/* ==== حقول منقولة من SitePlan وتكون read-only (إذا عرض فقط) ==== */
+const RO_FIELDS = new Set([
+  "city", "zone", "sector", "plot_no", "plot_area_sqm",
+  "land_use", "land_use_sub", "land_plan_no", "plot_address",
+  "project_no", "project_name"
+]);
+const isRO = (k) => RO_FIELDS.has(k);
 
 export default function LicenseStep({ projectId, onPrev, onNext }) {
-  /* =================== قوائم ثابتة =================== */
+  const { t, i18n } = useTranslation();
+  const isAR = i18n.language === "ar";
+
   const LICENSE_TYPES = useMemo(
     () => ([
-      { value: "new_build_empty_land", label: "بناء جديد في أرض خالية" },
-      { value: "renovation", label: "تعديل/ترميم" },
-      { value: "extension", label: "إضافة/امتداد" },
+      { value: "new_build_empty_land", label: t("license_type") + " - " + (i18n.language === "ar" ? "بناء جديد في أرض خالية" : "New build on empty land") },
+      { value: "renovation", label: i18n.language === "ar" ? "تعديل/ترميم" : "Renovation" },
+      { value: "extension", label: i18n.language === "ar" ? "إضافة/امتداد" : "Extension" },
     ]),
-    []
+    [i18n.language, t]
   );
 
-  /* =================== الحالة =================== */
+  /* ======= الحالة ======= */
   const [form, setForm] = useState({
-    // أعلى الصفحة
     license_type: "",
-    // بيانات الرخصة
     project_no: "",
     license_no: "",
     issue_date: "",
     last_issue_date: "",
-    // إضافي
     license_file_ref: "",
     project_name: "",
     license_stage_or_worktype: "",
     city: "",
     license_status: "",
-    // بيانات الأرض
     zone: "",
     sector: "",
     plot_no: "",
-    plot_area_sqm: "",     // مساحة الأرض (م²)
+    plot_area_sqm: "",
     land_use: "",
     land_use_sub: "",
     land_plan_no: "",
     plot_address: "",
-    // الاستشاري/المقاول
     consultant_name: "",
     consultant_license_no: "",
     contractor_name: "",
     contractor_license_no: "",
-    // اختياري
     expiry_date: "",
     technical_decision_ref: "",
     technical_decision_date: "",
     license_notes: "",
-    // ملف رخصة البناء
     building_license_file: null,
   });
 
-  // قائمة أسماء الملاك فقط (من SitePlan)
-  const [ownerNames, setOwnerNames] = useState([]);
-
+  // أصحاب الملك كأوبجكتات كاملة
+  const [owners, setOwners] = useState([]); // [{owner_name_ar, owner_name_en, ...}]
   const [existingId, setExistingId] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
+  const [isView, setIsView] = useState(false);
   const setF = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
-  /* =================== تحميل License موجود =================== */
+  /* تحميل License موجودة (نفضّل بياناتها) ثم اظهر View */
   useEffect(() => {
     if (!projectId) return;
     (async () => {
@@ -176,17 +176,34 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
             last_issue_date: toInputDate(s.last_issue_date),
             expiry_date: toInputDate(s.expiry_date),
             technical_decision_date: toInputDate(s.technical_decision_date),
-            // تأكد من عرض العربي حتى لو المتخزن إنجليزي
-            land_use: toAr(s.land_use || prev.land_use),
-            land_use_sub: toAr(s.land_use_sub || prev.land_use_sub),
+            land_use: toLocalizedUse(s.land_use ?? prev.land_use, i18n.language),
+            land_use_sub: toLocalizedUse(s.land_use_sub ?? prev.land_use_sub, i18n.language),
             building_license_file: null,
           }));
+
+          if (Array.isArray(s.owners) && s.owners.length) {
+            const normalized = s.owners.map(o => ({
+              owner_name_ar: o.owner_name_ar || o.owner_name || "",
+              owner_name_en: o.owner_name_en || "",
+              nationality: o.nationality || "",
+              id_number: o.id_number || "",
+              id_issue_date: o.id_issue_date || "",
+              id_expiry_date: o.id_expiry_date || "",
+              right_hold_type: o.right_hold_type || "Ownership",
+              share_possession: o.share_possession || "",
+              share_percent: (o.share_percent ?? "").toString(),
+              phone: o.phone || "",
+              email: o.email || "",
+            }));
+            if (normalized.length) setOwners(normalized);
+          }
+          setIsView(true); // ← إظهار “عرض فقط” عند الرجوع للخطوة
         }
       } catch {}
     })();
-  }, [projectId]); // eslint-disable-line
+  }, [projectId, i18n.language]); // eslint-disable-line
 
-  /* =================== ربط مع SitePlan =================== */
+  /* قراءة SitePlan دائمًا للفول-باك وملء أولي */
   useEffect(() => {
     if (!projectId) return;
     (async () => {
@@ -195,42 +212,53 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
         if (!Array.isArray(data) || !data.length) return;
         const s = data[0];
 
-        // اجمع أسماء الملاك فقط — نفضّل العربي ثم owner_name (عام) ثم الإنجليزي
-        const names =
-          Array.isArray(s.owners)
-            ? s.owners
-                .map((o) => (o.owner_name_ar || o.owner_name || o.owner_name_en || "").trim())
-                .filter(Boolean)
-            : [];
-        setOwnerNames(names);
+        setForm((prev) => {
+          const next = { ...prev };
+          const landUseRaw   = (s.allocation_name_ar || s.allocation_name || s.allocation_type || "");
+          const landUseSubRaw = (s.land_use_ar || s.land_use || "");
+          if (!prev.city)          next.city = s.municipality || "";
+          if (!prev.zone)          next.zone = s.zone || "";
+          if (!prev.plot_no)       next.plot_no = s.land_no || "";
+          if (!prev.sector)        next.sector = s.sector || "";
+          if (!prev.plot_address)  next.plot_address = s.plot_address || "";
+          if (!prev.plot_area_sqm) next.plot_area_sqm = s.plot_area_sqm || "";
+          if (!prev.project_no)    next.project_no = s.project_no || "";
+          if (!prev.project_name)  next.project_name = s.project_name || "";
+          if (!prev.land_use)      next.land_use = toLocalizedUse(landUseRaw, i18n.language);
+          if (!prev.land_use_sub)  next.land_use_sub = toLocalizedUse(landUseSubRaw, i18n.language);
+          return next;
+        });
 
-        // نقرأ الاستخدامات من السايت بلان — العربي أولاً، وإلا نحول الإنجليزي لعربي
-        const landUseRaw =
-          (s.allocation_name_ar || s.allocation_name || s.allocation_type || "");
-        const landUseSubRaw =
-          (s.land_use_ar || s.land_use || "");
-
-        setForm((prev) => ({
-          ...prev,
-          // عام/أرض
-          city: prev.city || s.municipality || "",
-          zone: prev.zone || s.zone || "",
-          plot_no: prev.plot_no || s.land_no || "",
-          sector: prev.sector || s.sector || "",
-          plot_address: prev.plot_address || s.plot_address || "",
-          plot_area_sqm: prev.plot_area_sqm || s.plot_area_sqm || "",
-          // مشروع
-          project_no: prev.project_no || s.project_no || "",
-          project_name: prev.project_name || s.project_name || "",
-          // استخدامات (قسرًا عربي)
-          land_use: prev.land_use || toAr(landUseRaw),
-          land_use_sub: prev.land_use_sub || toAr(landUseSubRaw),
-        }));
+        if ((!owners || owners.length === 0) && Array.isArray(s.owners)) {
+          const ownersFromSP = s.owners.map(o => ({
+            owner_name_ar: o.owner_name_ar || o.owner_name || "",
+            owner_name_en: o.owner_name_en || "",
+            nationality: o.nationality || "",
+            id_number: o.id_number || "",
+            id_issue_date: o.id_issue_date || "",
+            id_expiry_date: o.id_expiry_date || "",
+            right_hold_type: o.right_hold_type || "Ownership",
+            share_possession: o.share_possession || "",
+            share_percent: (o.share_percent ?? "").toString(),
+            phone: o.phone || "",
+            email: o.email || "",
+          }));
+          setOwners(ownersFromSP);
+        }
       } catch {}
     })();
-  }, [projectId]);
+  }, [projectId, i18n.language]); // eslint-disable-line
 
-  /* =================== بناء الحمولة + تحققات =================== */
+  /* تبديل اللغة → أعد تكييف العرض لاستخدامات الأرض */
+  useEffect(() => {
+    setForm((prev) => ({
+      ...prev,
+      land_use: toLocalizedUse(prev.land_use, i18n.language),
+      land_use_sub: toLocalizedUse(prev.land_use_sub, i18n.language),
+    }));
+  }, [i18n.language]);
+
+  /* بناء الحمولة */
   const buildPayload = () => {
     const normalized = {
       ...form,
@@ -238,184 +266,328 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
       last_issue_date: toApiDate(form.last_issue_date),
       expiry_date: toApiDate(form.expiry_date),
       technical_decision_date: toApiDate(form.technical_decision_date),
-      // تأكد أن الاستخدامات اللي بنرسلها عربي
-      land_use: toAr(form.land_use),
-      land_use_sub: toAr(form.land_use_sub),
     };
 
     if (normalized.last_issue_date && normalized.issue_date) {
       const last = new Date(normalized.last_issue_date);
       const first = new Date(normalized.issue_date);
-      if (last < first) throw new Error("تاريخ آخر إصدار يجب أن يكون بعد أو مساويًا لتاريخ الإصدار.");
+      if (last < first) {
+        throw new Error(i18n.language === "ar"
+          ? "تاريخ آخر إصدار يجب أن يكون بعد أو مساويًا لتاريخ الإصدار."
+          : "Last issue date must be on or after the issue date.");
+      }
     }
 
-    // في حال وجود ملف رخصة البناء -> FormData
-    if (form.building_license_file) {
-      const fd = new FormData();
-      Object.entries(normalized).forEach(([k, v]) => {
-        if (k === "building_license_file") return;
-        // لا ترسل الحقول الفارغة/الـ null إلى الخادم في FormData
-        if (v === null || v === undefined || v === "") return;
+    const fd = new FormData();
+    Object.entries(normalized).forEach(([k, v]) => {
+      if (v === null || v === undefined || v === "") return;
+      if (typeof v === "object" && !(v instanceof File) && !(v instanceof Blob)) {
+        fd.append(k, JSON.stringify(v));
+      } else {
         fd.append(k, v);
-      });
-      fd.append("building_license_file", form.building_license_file);
-      return fd;
+      }
+    });
+
+    // سنابشوت الملاك داخل الرخصة
+    if (Array.isArray(owners) && owners.length) {
+      fd.append("owners", JSON.stringify(owners));
     }
 
-    // في الحمولة JSON نُبقي null كما هو حتى يقبلها الخادم
-    const { building_license_file, ...rest } = normalized;
-    return rest;
+    if (form.building_license_file) {
+      fd.append("building_license_file", form.building_license_file);
+    }
+    return fd;
   };
 
   const saveAndNext = async () => {
     if (!projectId) {
-      setErrorMsg("افتح المعالج من مشروع محدد ليتم الحفظ على الخادم.");
+      setErrorMsg(t("open_specific_project_to_save"));
       return;
     }
     try {
       const payload = buildPayload();
-      if (existingId) await api.patch(`projects/${projectId}/license/${existingId}/`, payload);
-      else await api.post(`projects/${projectId}/license/`, payload);
+      if (existingId) {
+        await api.patch(`projects/${projectId}/license/${existingId}/`, payload);
+      } else {
+        const { data: created } = await api.post(`projects/${projectId}/license/`, payload);
+        if (created?.id) setExistingId(created.id);
+      }
       setErrorMsg("");
+      setIsView(true); // ← التحويل للوضع القرائي بعد الحفظ
       if (onNext) onNext();
     } catch (err) {
       const serverData = err?.response?.data;
       const formatted = formatServerErrors(serverData);
-      const fallback = err?.message || (serverData ? JSON.stringify(serverData, null, 2) : "تعذّر الحفظ");
+      const fallback = err?.message || (serverData ? JSON.stringify(serverData, null, 2) : t("save_failed"));
       setErrorMsg(formatted || fallback);
     }
   };
 
-  /* =================== الواجهة =================== */
+  /* ====== واجهة العرض (View) لمقاطع مختلفة ====== */
+  const ViewRow = ({ label, value, icon: Icon }) => (
+    <Field label={label} icon={Icon}>
+      <div>{value || "—"}</div>
+    </Field>
+  );
+
+  /* الواجهة */
   return (
-    <WizardShell icon={FaIdCard} title="الرخصة">
-      {/* مودال الخطأ */}
+    <WizardShell icon={FaIdCard} title={t("wizard_step_license")}>
       {errorMsg && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.35)", zIndex: 2000, display: "grid", placeItems: "center" }}
-        >
-          <div className="card" style={{ maxWidth: 720, width: "92%", direction: "rtl" }}>
+        <div role="dialog" aria-modal="true"
+             style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.35)", zIndex: 2000, display: "grid", placeItems: "center" }}>
+          <div className="card" style={{ maxWidth: 720, width: "92%", direction: isAR ? "rtl" : "ltr" }}>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <h3 style={{ margin: 0 }}>تنبيه ⚠️</h3>
+              <h3 style={{ margin: 0 }}>{t("warning")} ⚠️</h3>
             </div>
             <div className="alert error" style={{ marginBottom: 12 }}>
-              <div className="title">خطأ أثناء الحفظ</div>
+              <div className="title">{t("save_error")}</div>
             </div>
             <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit", fontSize: "18px", lineHeight: 1.7 }}>
               {errorMsg}
             </pre>
             <div className="row" style={{ justifyContent: "flex-start", marginTop: 16 }}>
-              <button className="btn" type="button" onClick={() => setErrorMsg("")}>تم</button>
+              <button className="btn" type="button" onClick={() => setErrorMsg("")}>{t("ok")}</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* أعلى الصفحة: نوع الرخصة + ملاحظة */}
-      <h4>بيانات الرخصة</h4>
-      <div className="form-grid cols-3">
-        <Field label="نوع الرخصة" icon={FaTools}>
-          <RtlSelect
-            className="rtl-select"
-            options={LICENSE_TYPES}
-            value={form.license_type}
-            onChange={(v) => setF("license_type", v)}
-            placeholder="اختر نوع الرخصة"
-          />
-          <div className="info-note"><FaInfoCircle aria-hidden /> <div>برجاء أخذ البيانات كما وردت بالرخصة.</div></div>
-        </Field>
-      </div>
+      {/* زر تعديل يظهر في وضع العرض */}
+      {isView && (
+        <div className="row" style={{ justifyContent: isAR ? "flex-start" : "flex-end", marginBottom: 12 }}>
+          <button type="button" className="btn secondary" onClick={() => setIsView(false)}>
+            ✏️ {t("edit")}
+          </button>
+        </div>
+      )}
 
-      {/* 1) بيانات الرخصة */}
-      <h4 className="mt-16">بيانات الرخصة</h4>
-      <div className="form-grid cols-4">
-        <Field label="رقم المشروع" icon={FaHashtag}>
-          <input className="input" value={form.project_no} onChange={(e) => setF("project_no", e.target.value)} />
-        </Field>
-        <Field label="رقم الرخصة" icon={FaHashtag}>
-          <input className="input" value={form.license_no} onChange={(e) => setF("license_no", e.target.value)} />
-        </Field>
-        <Field label="تاريخ إصدار الرخصة" icon={FaCalendarAlt}>
-          <input className="input" type="date" value={form.issue_date || ""} onChange={(e) => setF("issue_date", e.target.value)} />
-        </Field>
-        <Field label="تاريخ آخر إصدار للرخصة" icon={FaCalendarAlt}>
-          <input className="input" type="date" value={form.last_issue_date || ""} onChange={(e) => setF("last_issue_date", e.target.value)} />
-        </Field>
+      {/* أعلى الصفحة: نوع الرخصة */}
+      <h4>{t("license_details")}</h4>
+      {isView ? (
+        <div className="form-grid cols-3">
+          <ViewRow label={t("license_type")} value={LICENSE_TYPES.find(x => x.value === form.license_type)?.label || form.license_type} icon={FaTools} />
+          <ViewRow label={t("license_no")} value={form.license_no} icon={FaHashtag} />
+          <ViewRow label={t("issue_date")} value={form.issue_date} icon={FaCalendarAlt} />
+          <ViewRow label={t("last_issue_date")} value={form.last_issue_date} icon={FaCalendarAlt} />
+          <ViewRow label={t("project_no")} value={form.project_no} icon={FaHashtag} />
+          <ViewRow label={t("project_name")} value={form.project_name} icon={FaInfoCircle} />
+          <ViewRow label={t("attach_building_license")} value={form.building_license_file ? t("file_attached") : t("no_file")} icon={FaPaperclip} />
+        </div>
+      ) : (
+        <div className="form-grid cols-3">
+          {/* ✅ InfoTip جنب حقل نوع الرخصة */}
+          <Field label={t("license_type")} icon={FaTools}>
+            <div className="row" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <RtlSelect
+                className="rtl-select"
+                options={LICENSE_TYPES}
+                value={form.license_type}
+                onChange={(v) => setF("license_type", v)}
+                placeholder={t("select_license_type")}
+              />
+              <InfoTip align="start" text={t("note_take_data_as_in_license")} />
+            </div>
+          </Field>
 
-        {/* إرفاق رخصة البناء */}
-        <Field label="إرفاق رخصة البناء" icon={FaPaperclip}>
-          <input className="input" type="file" onChange={(e) => setF("building_license_file", e.target.files?.[0] || null)} />
-          <div className="info-note"><FaInfoCircle aria-hidden /> <div>يرجى إرفاق ملف <strong>رخصة البناء</strong>.</div></div>
-        </Field>
-      </div>
+          <Field label={t("license_no")} icon={FaHashtag}>
+            <input className="input" value={form.license_no} onChange={(e) => setF("license_no", e.target.value)} />
+          </Field>
+
+          <Field label={t("issue_date")} icon={FaCalendarAlt}>
+            <input className="input" type="date" value={form.issue_date || ""} onChange={(e) => setF("issue_date", e.target.value)} />
+          </Field>
+
+          <Field label={t("last_issue_date")} icon={FaCalendarAlt}>
+            <input className="input" type="date" value={form.last_issue_date || ""} onChange={(e) => setF("last_issue_date", e.target.value)} />
+          </Field>
+
+          <Field label={t("project_no")} icon={FaHashtag}>
+            <input
+              className={`input ${isRO("project_no") ? "readonly" : ""}`}
+              value={form.project_no}
+              readOnly={isRO("project_no")}
+              title={isRO("project_no") ? t("no_edit_source_siteplan") : ""}
+              onChange={isRO("project_no") ? undefined : (e) => setF("project_no", e.target.value)}
+            />
+          </Field>
+
+          <Field label={t("project_name")} icon={FaInfoCircle}>
+            <input
+              className={`input ${isRO("project_name") ? "readonly" : ""}`}
+              value={form.project_name}
+              readOnly={isRO("project_name")}
+              title={isRO("project_name") ? t("no_edit_source_siteplan") : ""}
+              onChange={isRO("project_name") ? undefined : (e) => setF("project_name", e.target.value)}
+            />
+          </Field>
+
+          {/* ✅ InfoTip جنب حقل الإرفاق */}
+          <Field label={t("attach_building_license")} icon={FaPaperclip}>
+            <div className="row" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                className="input"
+                type="file"
+                onChange={(e) => setF("building_license_file", e.target.files?.[0] || null)}
+              />
+              <InfoTip align="start" text={t("please_attach_building_license")} />
+            </div>
+          </Field>
+        </div>
+      )}
 
       {/* 2) بيانات الأرض */}
-      <h4 className="mt-16">بيانات الأرض</h4>
-      <div className="form-grid cols-4">
-        <Field label="المنطقة" icon={FaMapMarkerAlt}>
-          <input className="input" value={form.zone} onChange={(e) => setF("zone", e.target.value)} />
-        </Field>
-        <Field label="الحوض" icon={FaSitemap}>
-          <input className="input" value={form.sector} onChange={(e) => setF("sector", e.target.value)} />
-        </Field>
-        <Field label="رقم القطعة" icon={FaHashtag}>
-          <input className="input" value={form.plot_no} onChange={(e) => setF("plot_no", e.target.value)} />
-        </Field>
+      <h4 className="mt-16">{t("land_details")}</h4>
+      {isView ? (
+        <div className="form-grid cols-4">
+          <ViewRow label={t("zone")} value={form.zone} icon={FaMapMarkerAlt} />
+          <ViewRow label={t("sector")} value={form.sector} icon={FaSitemap} />
+          <ViewRow label={t("plot_no")} value={form.plot_no} icon={FaHashtag} />
+          <ViewRow label={t("plot_area_sqm")} value={form.plot_area_sqm} icon={FaRulerCombined} />
+          <ViewRow label={t("land_use")} value={form.land_use} icon={FaSitemap} />
+          <ViewRow label={t("land_use_sub")} value={form.land_use_sub} icon={FaSitemap} />
+          <ViewRow label={t("plot_address")} value={form.plot_address} icon={FaCity} />
+        </div>
+      ) : (
+        <div className="form-grid cols-4">
+          <Field label={t("zone")} icon={FaMapMarkerAlt}>
+            <input
+              className={`input ${isRO("zone") ? "readonly" : ""}`}
+              value={form.zone}
+              readOnly={isRO("zone")}
+              title={isRO("zone") ? t("no_edit_source_siteplan") : ""}
+              onChange={isRO("zone") ? undefined : (e) => setF("zone", e.target.value)}
+            />
+          </Field>
+          <Field label={t("sector")} icon={FaSitemap}>
+            <input
+              className={`input ${isRO("sector") ? "readonly" : ""}`}
+              value={form.sector}
+              readOnly={isRO("sector")}
+              title={isRO("sector") ? t("no_edit_source_siteplan") : ""}
+              onChange={isRO("sector") ? undefined : (e) => setF("sector", e.target.value)}
+            />
+          </Field>
+          <Field label={t("plot_no")} icon={FaHashtag}>
+            <input
+              className={`input ${isRO("plot_no") ? "readonly" : ""}`}
+              value={form.plot_no}
+              readOnly={isRO("plot_no")}
+              title={isRO("plot_no") ? t("no_edit_source_siteplan") : ""}
+              onChange={isRO("plot_no") ? undefined : (e) => setF("plot_no", e.target.value)}
+            />
+          </Field>
+          <Field label={t("plot_area_sqm")} icon={FaRulerCombined}>
+            <input
+              className={`input ${isRO("plot_area_sqm") ? "readonly" : ""}`}
+              type={isRO("plot_area_sqm") ? "text" : "number"}
+              value={form.plot_area_sqm}
+              readOnly={isRO("plot_area_sqm")}
+              title={isRO("plot_area_sqm") ? t("no_edit_source_siteplan") : ""}
+              onChange={isRO("plot_area_sqm") ? undefined : (e) => setF("plot_area_sqm", e.target.value)}
+            />
+          </Field>
+          <Field label={t("land_use")} icon={FaSitemap}>
+            <input
+              className={`input ${isRO("land_use") ? "readonly" : ""}`}
+              value={form.land_use}
+              readOnly={isRO("land_use")}
+              title={isRO("land_use") ? t("no_edit_source_siteplan") : ""}
+              onChange={isRO("land_use") ? undefined : (e) => setF("land_use", e.target.value)}
+            />
+          </Field>
+          <Field label={t("land_use_sub")} icon={FaSitemap}>
+            <input
+              className={`input ${isRO("land_use_sub") ? "readonly" : ""}`}
+              value={form.land_use_sub}
+              readOnly={isRO("land_use_sub")}
+              title={isRO("land_use_sub") ? t("no_edit_source_siteplan") : ""}
+              onChange={isRO("land_use_sub") ? undefined : (e) => setF("land_use_sub", e.target.value)}
+            />
+          </Field>
+          <Field label={t("plot_address")} icon={FaCity}>
+            <input
+              className={`input ${isRO("plot_address") ? "readonly" : ""}`}
+              value={form.plot_address}
+              readOnly={isRO("plot_address")}
+              title={isRO("plot_address") ? t("no_edit_source_siteplan") : ""}
+              onChange={isRO("plot_address") ? undefined : (e) => setF("plot_address", e.target.value)}
+            />
+          </Field>
+        </div>
+      )}
 
-        {/* مساحة الأرض (م²) — تجي من SitePlan */}
-        <Field label="مساحة الأرض (م²)" icon={FaRulerCombined}>
-          <input className="input" type="number" value={form.plot_area_sqm} onChange={(e) => setF("plot_area_sqm", e.target.value)} />
-        </Field>
-
-        <Field label="استخدام الأرض (مسمى التخصيص)" icon={FaSitemap}>
-          <input className="input" value={form.land_use} onChange={(e) => setF("land_use", e.target.value)} />
-        </Field>
-        <Field label="استخدام الأرض الفرعي (استخدام الارض)" icon={FaSitemap}>
-          <input className="input" value={form.land_use_sub} onChange={(e) => setF("land_use_sub", e.target.value)} />
-        </Field>
-      </div>
-
-      {/* 3) أسماء الملاك — من SitePlan فقط */}
-      <h4 className="mt-16">أسماء الملاك</h4>
-      <div className="form-grid cols-3">
-        {ownerNames.length > 0 ? (
-          ownerNames.map((name, i) => (
-            <Field key={i} label={`المالك #${i + 1}`} icon={FaUser}>
-              <input className="input" value={name} readOnly />
-            </Field>
-          ))
-        ) : (
-          <div className="info-note" style={{ gridColumn: "1 / -1" }}>
-            <FaInfoCircle aria-hidden /> <div>لا توجد أسماء ملاك في مخطط الأرض.</div>
+      {/* 3) بيانات الملاك */}
+      <h4 className="mt-16">{t("owner_details")}</h4>
+      {owners && owners.length ? (
+        owners.map((o, i) => (
+          <div key={i} className="owner-block">
+            <div className="form-grid cols-3">
+              <Field label={t("owner_name_ar")} icon={FaUser}>
+                {isView ? (
+                  <div>{o.owner_name_ar || "—"}</div>
+                ) : (
+                  <input className="input readonly" readOnly value={o.owner_name_ar || ""} title={t("no_edit_source_siteplan")} />
+                )}
+              </Field>
+              <Field label={t("owner_name_en")} icon={FaUser}>
+                {isView ? (
+                  <div>{o.owner_name_en || "—"}</div>
+                ) : (
+                  <input className="input readonly" readOnly value={o.owner_name_en || ""} title={t("no_edit_source_siteplan")} />
+                )}
+              </Field>
+              <div />
+            </div>
           </div>
-        )}
-      </div>
+        ))
+      ) : (
+        // ✅ InfoTip في نفس مكان ملاحظة الملاك السابقة
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+          <InfoTip align="start" text={t("no_owners_in_siteplan")} />
+        </div>
+      )}
 
-      {/* 4) بيانات الاستشاري */}
-      <h4 className="mt-16">بيانات الاستشاري</h4>
-      <div className="form-grid cols-4">
-        <Field label="الاستشاري" icon={FaUser}>
-          <input className="input" value={form.consultant_name} onChange={(e) => setF("consultant_name", e.target.value)} />
-        </Field>
-        <Field label="رخصة الاستشاري" icon={FaHashtag}>
-          <input className="input" value={form.consultant_license_no} onChange={(e) => setF("consultant_license_no", e.target.value)} />
-        </Field>
-      </div>
+      {/* 4) الاستشاري */}
+      <h4 className="mt-16">{t("consultant_details")}</h4>
+      {isView ? (
+        <div className="form-grid cols-4">
+          <ViewRow label={t("consultant")} value={form.consultant_name} icon={FaUser} />
+          <ViewRow label={t("consultant_lic")} value={form.consultant_license_no} icon={FaHashtag} />
+        </div>
+      ) : (
+        <div className="form-grid cols-4">
+          <Field label={t("consultant")} icon={FaUser}>
+            <input className="input" value={form.consultant_name} onChange={(e) => setF("consultant_name", e.target.value)} />
+          </Field>
+          <Field label={t("consultant_lic")} icon={FaHashtag}>
+            <input className="input" value={form.consultant_license_no} onChange={(e) => setF("consultant_license_no", e.target.value)} />
+          </Field>
+        </div>
+      )}
 
-      {/* 5) بيانات المقاول */}
-      <h4 className="mt-16">بيانات المقاول</h4>
-      <div className="form-grid cols-4">
-        <Field label="المقاول" icon={FaUser}>
-          <input className="input" value={form.contractor_name} onChange={(e) => setF("contractor_name", e.target.value)} />
-        </Field>
-        <Field label="رخصة المقاول" icon={FaHashtag}>
-          <input className="input" value={form.contractor_license_no} onChange={(e) => setF("contractor_license_no", e.target.value)} />
-        </Field>
-      </div>
+      {/* 5) المقاول */}
+      <h4 className="mt-16">{t("contractor_details")}</h4>
+      {isView ? (
+        <div className="form-grid cols-4">
+          <ViewRow label={t("contractor")} value={form.contractor_name} icon={FaUser} />
+          <ViewRow label={t("contractor_lic")} value={form.contractor_license_no} icon={FaHashtag} />
+        </div>
+      ) : (
+        <div className="form-grid cols-4">
+          <Field label={t("contractor")} icon={FaUser}>
+            <input className="input" value={form.contractor_name} onChange={(e) => setF("contractor_name", e.target.value)} />
+          </Field>
+          <Field label={t("contractor_lic")} icon={FaHashtag}>
+            <input className="input" value={form.contractor_license_no} onChange={(e) => setF("contractor_license_no", e.target.value)} />
+          </Field>
+        </div>
+      )}
 
-      <StepActions onPrev={onPrev} onNext={saveAndNext} />
+      <StepActions
+        onPrev={onPrev}
+        onNext={saveAndNext}
+      />
     </WizardShell>
   );
 }
