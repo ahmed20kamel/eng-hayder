@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useState, useRef } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../services/api";
 
 function Card({ title, subtitle, children, actions }) {
@@ -17,6 +17,31 @@ function Card({ title, subtitle, children, actions }) {
   );
 }
 
+function ConfirmDialog({ title, desc, confirmLabel, cancelLabel, onClose, onConfirm, danger, busy }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const key = (e) => { if (e.key === "Escape") onClose?.(); };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [onClose]);
+  const onBackdrop = (e) => { if (e.target === ref.current) onClose?.(); };
+
+  return (
+    <div ref={ref} className="dlg-backdrop" onMouseDown={onBackdrop}>
+      <div className="dlg" role="dialog" aria-modal="true">
+        <div className="dlg-hd"><span className="dlg-title">{title}</span></div>
+        <div className="dlg-body">{desc}</div>
+        <div className="dlg-ft">
+          <button className="btn secondary" onClick={onClose} disabled={busy}>{cancelLabel || "إلغاء"}</button>
+          <button className={`btn ${danger ? "danger" : ""}`} onClick={onConfirm} disabled={busy}>
+            {confirmLabel || "تأكيد"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const fmtAED = (v) => {
   const n = Number(v || 0);
   if (!Number.isFinite(n)) return "—";
@@ -25,11 +50,16 @@ const fmtAED = (v) => {
 
 export default function ProjectView() {
   const { projectId } = useParams();
+  const nav = useNavigate();
+
   const [loading, setLoading] = useState(true);
   const [project, setProject] = useState(null);
   const [siteplan, setSiteplan] = useState(null);
   const [license, setLicense] = useState(null);
   const [contract, setContract] = useState(null);
+
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!projectId) return;
@@ -48,15 +78,15 @@ export default function ProjectView() {
 
         if (spRes.status === "fulfilled") {
           const d = spRes.value?.data;
-          setSiteplan(Array.isArray(d) ? d[0] : (d || null));
+          setSiteplan(Array.isArray(d) ? d[0] : d || null);
         }
         if (lcRes.status === "fulfilled") {
           const d = lcRes.value?.data;
-          setLicense(Array.isArray(d) ? d[0] : (d || null));
+          setLicense(Array.isArray(d) ? d[0] : d || null);
         }
         if (ctRes.status === "fulfilled") {
           const d = ctRes.value?.data;
-          setContract(Array.isArray(d) ? d[0] : (d || null));
+          setContract(Array.isArray(d) ? d[0] : d || null);
         }
       } finally {
         if (mounted) setLoading(false);
@@ -71,17 +101,51 @@ export default function ProjectView() {
 
   const titleText = project?.display_name || project?.name || `مشروع #${projectId}`;
 
+  const onDelete = async () => {
+    if (!projectId) return;
+    try {
+      setDeleting(true);
+      await api.delete(`projects/${projectId}/`);
+      setConfirmOpen(false);
+      nav("/projects"); // ← رجوع لصفحة “المشاريع”
+    } catch (e) {
+      console.error(e);
+      alert("حدث خطأ أثناء الحذف.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="container">
+      {/* زر حذف ثابت أعلى-يسار */}
+      <style>{`
+        .delete-fab {
+          position: absolute;
+          left: 16px; top: 16px; z-index: 2;
+        }
+        .btn.danger {
+          background: #e53935; color: #fff; border: none;
+        }
+        .btn.danger:hover { filter: brightness(0.95); }
+        .card--page { position: relative; }
+      `}</style>
+
       <div className="card card--page">
+        {/* زر الحذف أعلى اليسار */}
+        <button className="btn danger delete-fab" onClick={() => setConfirmOpen(true)}>
+          حذف المشروع
+        </button>
+
         <div className="content">
           <div className="row row--space-between row--align-center">
-            <h2 className="page-title">
-              {`📦 ${titleText}`}
-            </h2>
+            <h2 className="page-title">{`📦 ${titleText}`}</h2>
+
             <div className="row row--gap-8">
-              <Link className="btn secondary" to="/">الرئيسية ←</Link>
-              <Link className="btn" to={`/projects/${projectId}/wizard?step=setup&mode=edit`}>تعديل المشروع</Link>
+              <Link className="btn secondary" to="/projects">المشاريع ←</Link>
+              <Link className="btn" to={`/projects/${projectId}/wizard?step=setup&mode=edit`}>
+                تعديل المشروع
+              </Link>
             </div>
           </div>
 
@@ -89,6 +153,7 @@ export default function ProjectView() {
             <div className="mini mt-12">⏳ جاري التحميل…</div>
           ) : (
             <div className="stack mt-12 stack--gap-12">
+
               {/* معلومات المشروع */}
               <Card
                 title="🧱 معلومات المشروع (عرض)"
@@ -198,6 +263,20 @@ export default function ProjectView() {
           )}
         </div>
       </div>
+
+      {/* نافذة تأكيد الحذف */}
+      {confirmOpen && (
+        <ConfirmDialog
+          title="تأكيد الحذف"
+          desc={<>هل أنت متأكد من حذف المشروع <b>{titleText}</b>؟<br />هذا الإجراء لا يمكن التراجع عنه.</>}
+          confirmLabel={deleting ? "جارٍ الحذف..." : "حذف نهائي"}
+          cancelLabel="إلغاء"
+          onClose={() => !deleting && setConfirmOpen(false)}
+          onConfirm={onDelete}
+          danger
+          busy={deleting}
+        />
+      )}
     </div>
   );
 }
