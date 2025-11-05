@@ -11,10 +11,13 @@ export default function ProjectsPage() {
 
   const loadProjects = async () => {
     try {
-      const { data } = await api.get("projects/");
-      setProjects(Array.isArray(data) ? data : []);
+      const { data } = await api.get("projects/"); // تأكد من السلاش
+      // ✅ يقبل Array مباشر أو شكل Paginated (results/items/data)
+      const items = Array.isArray(data) ? data : (data?.results || data?.items || data?.data || []);
+      setProjects(items);
     } catch (e) {
       console.error(e);
+      setProjects([]);
     } finally {
       setLoading(false);
     }
@@ -63,30 +66,30 @@ export default function ProjectsPage() {
               </thead>
               <tbody>
                 {projects.map((p, i) => {
-                  const hasSiteplan = !!p.has_siteplan;
-                  const hasLicense  = !!p.has_license;
-                  const hasContract = !!p.contract_type;
+                  const hasSiteplan = !!p?.has_siteplan;
+                  const hasLicense  = !!p?.has_license;
+                  const hasContract = !!p?.contract_type;
                   const active      = hasSiteplan || hasLicense || hasContract;
 
                   return (
-                    <tr key={p.id} className={active ? "prj-row--active" : undefined}>
+                    <tr key={p?.id ?? i} className={active ? "prj-row--active" : undefined}>
                       <td className="prj-muted">{i + 1}</td>
 
                       <td>
                         <div className="prj-cell__main">
-                          <div className="prj-cell__title">{p.name || `مشروع #${p.id}`}</div>
+                          <div className="prj-cell__title">{p?.name || `مشروع #${p?.id ?? i+1}`}</div>
                           <div className="prj-cell__sub prj-muted">
-                            {p.city ? `المدينة: ${p.city}` : "—"}
+                            {p?.city ? `المدينة: ${p.city}` : "—"}
                           </div>
                         </div>
                       </td>
 
                       <td>
-                        <code className="prj-code">{p.internal_code || `PRJ-${p.id}`}</code>
+                        <code className="prj-code">{p?.internal_code || `PRJ-${p?.id ?? i+1}`}</code>
                       </td>
 
-                      <td className="prj-nowrap">{p.project_type || "—"}</td>
-                      <td className="prj-nowrap">{p.contract_type || "—"}</td>
+                      <td className="prj-nowrap">{p?.project_type || "—"}</td>
+                      <td className="prj-nowrap">{p?.contract_type || "—"}</td>
 
                       <td>
                         <div className="prj-badges">
@@ -97,8 +100,8 @@ export default function ProjectsPage() {
                       </td>
 
                       <td className="prj-actions">
-                        <Link className="prj-btn prj-btn--primary" to={`/projects/${p.id}/wizard`}>تعديل</Link>
-                        <Link className="prj-btn prj-btn--ghost"   to={`/projects/${p.id}`}>عرض →</Link>
+                        <Link className="prj-btn prj-btn--primary" to={`/projects/${p?.id}/wizard`}>تعديل</Link>
+                        <Link className="prj-btn prj-btn--ghost"   to={`/projects/${p?.id}`}>عرض →</Link>
                       </td>
                     </tr>
                   );

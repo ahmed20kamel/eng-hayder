@@ -9,11 +9,15 @@ export default function ViewSummary() {
     <div className="container">
       <div className="card card--page">
         <div className="content">
-          <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-            <h2 style={{ margin: 0 }}>📊 الملخص المالي للمشروع</h2>
-            <div className="row" style={{ gap: 8 }}>
-              <Link className="btn secondary" to={`/projects/${projectId}`}>لوحة المشروع ←</Link>
-              <Link className="btn" to={`/projects/${projectId}/wizard`}>فتح المعالج</Link>
+          <div className="row row--space-between row--align-center">
+            <h2 className="page-title">📊 الملخص المالي للمشروع</h2>
+            <div className="row row--gap-8">
+              <Link className="btn secondary" to={`/projects/${projectId}`}>
+                لوحة المشروع ←
+              </Link>
+              <Link className="btn" to={`/projects/${projectId}/wizard`}>
+                فتح المعالج
+              </Link>
             </div>
           </div>
 

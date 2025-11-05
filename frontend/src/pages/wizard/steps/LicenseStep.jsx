@@ -16,7 +16,7 @@ import {
 /* ==== تحويلات عربي/إنجليزي للاستخدامات (عرض فقط) ==== */
 const EN_AR = { Residential: "سكني", Commercial: "تجاري", Government: "حكومي", Investment: "استثماري" };
 const AR_EN = Object.fromEntries(Object.entries(EN_AR).map(([en, ar]) => [ar, en]));
-const toLocalizedUse = (v, lang) => (!v ? "" : lang === "ar" ? (EN_AR[v] || v) : (AR_EN[v] || v));
+const toLocalizedUse = (v, lang) => (!v ? "" : /^ar\b/i.test(lang) ? (EN_AR[v] || v) : (AR_EN[v] || v));
 
 /* ==== تحويلات التاريخ ==== */
 const toInputDate = (d) => {
@@ -37,12 +37,14 @@ function formatServerErrors(data) {
   const prettyKey = (k) => ({
     non_field_errors: "عام",
     license_type: "نوع الرخصة",
-    project_no: "رقم المشروع",
+    project_no: "رقم المشروع (المطور)",
+    license_project_no: "رقم المشروع (الرخصة)",
     license_no: "رقم الرخصة",
     issue_date: "تاريخ إصدار الرخصة",
     last_issue_date: "تاريخ آخر إصدار",
     license_file_ref: "طلب المشروع",
-    project_name: "اسم المشروع",
+    project_name: "اسم المشروع (المطور)",
+    license_project_name: "اسم المشروع (الرخصة)",
     license_stage_or_worktype: "بيان الأعمال",
     city: "البلدية",
     license_status: "حالة الطلب",
@@ -105,32 +107,47 @@ function formatServerErrors(data) {
 const RO_FIELDS = new Set([
   "city", "zone", "sector", "plot_no", "plot_area_sqm",
   "land_use", "land_use_sub", "land_plan_no", "plot_address",
-  "project_no", "project_name"
+  "project_no", "project_name" // ← المطوّر (من الـ Site Plan)
 ]);
 const isRO = (k) => RO_FIELDS.has(k);
 
 export default function LicenseStep({ projectId, onPrev, onNext }) {
   const { t, i18n } = useTranslation();
-  const isAR = i18n.language === "ar";
+  const isAR = /^ar\b/i.test(i18n.language || "");
+
+  // لابيلات واضحة تفرّق بين المطوّر والرخصة
+  const devParen = ` (${t("developer", "المطور")})`;
+  const devProjectNoLabel = `${t("project_no")}${devParen}`;
+  const devProjectNameLabel = `${t("project_name_f", t("project_name", "اسم المشروع"))}${devParen}`;
+
+  const licProjectNoLabel = t("license_project_no", isAR ? "رقم المشروع (الرخصة)" : "License Project No");
+  const licProjectNameLabel = t("license_project_name", isAR ? "اسم المشروع (الرخصة)" : "License Project Name");
+
+  const readonlyHint = t("no_edit_source_siteplan", isAR ? "قراءة فقط (قادمة من مخطط الأرض)" : "Read-only (filled from Site Plan)");
 
   const LICENSE_TYPES = useMemo(
     () => ([
-      { value: "new_build_empty_land", label: t("license_type") + " - " + (i18n.language === "ar" ? "بناء جديد في أرض خالية" : "New build on empty land") },
-      { value: "renovation", label: i18n.language === "ar" ? "تعديل/ترميم" : "Renovation" },
-      { value: "extension", label: i18n.language === "ar" ? "إضافة/امتداد" : "Extension" },
+      { value: "new_build_empty_land", label: t("license_type") + " - " + (isAR ? "بناء جديد في أرض خالية" : "New build on empty land") },
+      { value: "renovation", label: isAR ? "تعديل/ترميم" : "Renovation" },
+      { value: "extension", label: isAR ? "إضافة/امتداد" : "Extension" },
     ]),
-    [i18n.language, t]
+    [isAR, t]
   );
 
   /* ======= الحالة ======= */
   const [form, setForm] = useState({
     license_type: "",
+    // (المطور) جاية من الـ Site Plan
     project_no: "",
+    project_name: "",
+    // (الرخصة) جديدة ومنفصلة
+    license_project_no: "",
+    license_project_name: "",
+
     license_no: "",
     issue_date: "",
     last_issue_date: "",
     license_file_ref: "",
-    project_name: "",
     license_stage_or_worktype: "",
     city: "",
     license_status: "",
@@ -203,7 +220,7 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
     })();
   }, [projectId, i18n.language]); // eslint-disable-line
 
-  /* قراءة SitePlan دائمًا للفول-باك وملء أولي */
+  /* قراءة SitePlan دائمًا للفول-باك وملء أولي لحقول المطوّر فقط */
   useEffect(() => {
     if (!projectId) return;
     (async () => {
@@ -214,18 +231,25 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
 
         setForm((prev) => {
           const next = { ...prev };
-          const landUseRaw   = (s.allocation_name_ar || s.allocation_name || s.allocation_type || "");
+          const landUseRaw    = (s.allocation_name_ar || s.allocation_name || s.allocation_type || "");
           const landUseSubRaw = (s.land_use_ar || s.land_use || "");
+
           if (!prev.city)          next.city = s.municipality || "";
           if (!prev.zone)          next.zone = s.zone || "";
           if (!prev.plot_no)       next.plot_no = s.land_no || "";
           if (!prev.sector)        next.sector = s.sector || "";
           if (!prev.plot_address)  next.plot_address = s.plot_address || "";
           if (!prev.plot_area_sqm) next.plot_area_sqm = s.plot_area_sqm || "";
+
+          // حقول المطور (Read-only) لو متاحة
           if (!prev.project_no)    next.project_no = s.project_no || "";
           if (!prev.project_name)  next.project_name = s.project_name || "";
+
+          // استخدمات الأرض
           if (!prev.land_use)      next.land_use = toLocalizedUse(landUseRaw, i18n.language);
           if (!prev.land_use_sub)  next.land_use_sub = toLocalizedUse(landUseSubRaw, i18n.language);
+
+          // لا نلمس license_project_* هنا — دي تخص الرخصة فقط
           return next;
         });
 
@@ -272,7 +296,7 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
       const last = new Date(normalized.last_issue_date);
       const first = new Date(normalized.issue_date);
       if (last < first) {
-        throw new Error(i18n.language === "ar"
+        throw new Error(isAR
           ? "تاريخ آخر إصدار يجب أن يكون بعد أو مساويًا لتاريخ الإصدار."
           : "Last issue date must be on or after the issue date.");
       }
@@ -362,7 +386,7 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
         </div>
       )}
 
-      {/* أعلى الصفحة: نوع الرخصة */}
+      {/* أعلى الصفحة: بيانات الرخصة + مشاريع المطور/الرخصة */}
       <h4>{t("license_details")}</h4>
       {isView ? (
         <div className="form-grid cols-3">
@@ -370,13 +394,24 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
           <ViewRow label={t("license_no")} value={form.license_no} icon={FaHashtag} />
           <ViewRow label={t("issue_date")} value={form.issue_date} icon={FaCalendarAlt} />
           <ViewRow label={t("last_issue_date")} value={form.last_issue_date} icon={FaCalendarAlt} />
-          <ViewRow label={t("project_no")} value={form.project_no} icon={FaHashtag} />
-          <ViewRow label={t("project_name")} value={form.project_name} icon={FaInfoCircle} />
+
+          {/* (المطور) نخفي لو فاضيين */}
+          {form.project_no ? (
+            <ViewRow label={devProjectNoLabel} value={form.project_no} icon={FaHashtag} />
+          ) : null}
+          {form.project_name ? (
+            <ViewRow label={devProjectNameLabel} value={form.project_name} icon={FaInfoCircle} />
+          ) : null}
+
+          {/* (الرخصة) دائمًا موجودين */}
+          <ViewRow label={licProjectNoLabel} value={form.license_project_no} icon={FaHashtag} />
+          <ViewRow label={licProjectNameLabel} value={form.license_project_name} icon={FaInfoCircle} />
+
           <ViewRow label={t("attach_building_license")} value={form.building_license_file ? t("file_attached") : t("no_file")} icon={FaPaperclip} />
         </div>
       ) : (
         <div className="form-grid cols-3">
-          {/* ✅ InfoTip جنب حقل نوع الرخصة */}
+          {/* نوع الرخصة */}
           <Field label={t("license_type")} icon={FaTools}>
             <div className="row" style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <RtlSelect
@@ -402,27 +437,49 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
             <input className="input" type="date" value={form.last_issue_date || ""} onChange={(e) => setF("last_issue_date", e.target.value)} />
           </Field>
 
-          <Field label={t("project_no")} icon={FaHashtag}>
+          {/* (المطور) Read-only + اخفاء لو فاضي */}
+          {form.project_no ? (
+            <Field label={devProjectNoLabel} icon={FaHashtag}>
+              <input
+                className={`input ${isRO("project_no") ? "readonly" : ""}`}
+                value={form.project_no}
+                readOnly={isRO("project_no")}
+                title={isRO("project_no") ? readonlyHint : ""}
+                onChange={isRO("project_no") ? undefined : (e) => setF("project_no", e.target.value)}
+              />
+            </Field>
+          ) : null}
+
+          {form.project_name ? (
+            <Field label={devProjectNameLabel} icon={FaInfoCircle}>
+              <input
+                className={`input ${isRO("project_name") ? "readonly" : ""}`}
+                value={form.project_name}
+                readOnly={isRO("project_name")}
+                title={isRO("project_name") ? readonlyHint : ""}
+                onChange={isRO("project_name") ? undefined : (e) => setF("project_name", e.target.value)}
+              />
+            </Field>
+          ) : null}
+
+          {/* (الرخصة) Editable دائمًا */}
+          <Field label={licProjectNoLabel} icon={FaHashtag}>
             <input
-              className={`input ${isRO("project_no") ? "readonly" : ""}`}
-              value={form.project_no}
-              readOnly={isRO("project_no")}
-              title={isRO("project_no") ? t("no_edit_source_siteplan") : ""}
-              onChange={isRO("project_no") ? undefined : (e) => setF("project_no", e.target.value)}
+              className="input"
+              value={form.license_project_no}
+              onChange={(e) => setF("license_project_no", e.target.value)}
             />
           </Field>
 
-          <Field label={t("project_name")} icon={FaInfoCircle}>
+          <Field label={licProjectNameLabel} icon={FaInfoCircle}>
             <input
-              className={`input ${isRO("project_name") ? "readonly" : ""}`}
-              value={form.project_name}
-              readOnly={isRO("project_name")}
-              title={isRO("project_name") ? t("no_edit_source_siteplan") : ""}
-              onChange={isRO("project_name") ? undefined : (e) => setF("project_name", e.target.value)}
+              className="input"
+              value={form.license_project_name}
+              onChange={(e) => setF("license_project_name", e.target.value)}
             />
           </Field>
 
-          {/* ✅ InfoTip جنب حقل الإرفاق */}
+          {/* الإرفاق */}
           <Field label={t("attach_building_license")} icon={FaPaperclip}>
             <div className="row" style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <input
@@ -455,7 +512,7 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
               className={`input ${isRO("zone") ? "readonly" : ""}`}
               value={form.zone}
               readOnly={isRO("zone")}
-              title={isRO("zone") ? t("no_edit_source_siteplan") : ""}
+              title={isRO("zone") ? readonlyHint : ""}
               onChange={isRO("zone") ? undefined : (e) => setF("zone", e.target.value)}
             />
           </Field>
@@ -464,7 +521,7 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
               className={`input ${isRO("sector") ? "readonly" : ""}`}
               value={form.sector}
               readOnly={isRO("sector")}
-              title={isRO("sector") ? t("no_edit_source_siteplan") : ""}
+              title={isRO("sector") ? readonlyHint : ""}
               onChange={isRO("sector") ? undefined : (e) => setF("sector", e.target.value)}
             />
           </Field>
@@ -473,7 +530,7 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
               className={`input ${isRO("plot_no") ? "readonly" : ""}`}
               value={form.plot_no}
               readOnly={isRO("plot_no")}
-              title={isRO("plot_no") ? t("no_edit_source_siteplan") : ""}
+              title={isRO("plot_no") ? readonlyHint : ""}
               onChange={isRO("plot_no") ? undefined : (e) => setF("plot_no", e.target.value)}
             />
           </Field>
@@ -483,7 +540,7 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
               type={isRO("plot_area_sqm") ? "text" : "number"}
               value={form.plot_area_sqm}
               readOnly={isRO("plot_area_sqm")}
-              title={isRO("plot_area_sqm") ? t("no_edit_source_siteplan") : ""}
+              title={isRO("plot_area_sqm") ? readonlyHint : ""}
               onChange={isRO("plot_area_sqm") ? undefined : (e) => setF("plot_area_sqm", e.target.value)}
             />
           </Field>
@@ -492,7 +549,7 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
               className={`input ${isRO("land_use") ? "readonly" : ""}`}
               value={form.land_use}
               readOnly={isRO("land_use")}
-              title={isRO("land_use") ? t("no_edit_source_siteplan") : ""}
+              title={isRO("land_use") ? readonlyHint : ""}
               onChange={isRO("land_use") ? undefined : (e) => setF("land_use", e.target.value)}
             />
           </Field>
@@ -501,7 +558,7 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
               className={`input ${isRO("land_use_sub") ? "readonly" : ""}`}
               value={form.land_use_sub}
               readOnly={isRO("land_use_sub")}
-              title={isRO("land_use_sub") ? t("no_edit_source_siteplan") : ""}
+              title={isRO("land_use_sub") ? readonlyHint : ""}
               onChange={isRO("land_use_sub") ? undefined : (e) => setF("land_use_sub", e.target.value)}
             />
           </Field>
@@ -510,7 +567,7 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
               className={`input ${isRO("plot_address") ? "readonly" : ""}`}
               value={form.plot_address}
               readOnly={isRO("plot_address")}
-              title={isRO("plot_address") ? t("no_edit_source_siteplan") : ""}
+              title={isRO("plot_address") ? readonlyHint : ""}
               onChange={isRO("plot_address") ? undefined : (e) => setF("plot_address", e.target.value)}
             />
           </Field>
@@ -527,14 +584,14 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
                 {isView ? (
                   <div>{o.owner_name_ar || "—"}</div>
                 ) : (
-                  <input className="input readonly" readOnly value={o.owner_name_ar || ""} title={t("no_edit_source_siteplan")} />
+                  <input className="input readonly" readOnly value={o.owner_name_ar || ""} title={readonlyHint} />
                 )}
               </Field>
               <Field label={t("owner_name_en")} icon={FaUser}>
                 {isView ? (
                   <div>{o.owner_name_en || "—"}</div>
                 ) : (
-                  <input className="input readonly" readOnly value={o.owner_name_en || ""} title={t("no_edit_source_siteplan")} />
+                  <input className="input readonly" readOnly value={o.owner_name_en || ""} title={readonlyHint} />
                 )}
               </Field>
               <div />
@@ -542,7 +599,6 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
           </div>
         ))
       ) : (
-        // ✅ InfoTip في نفس مكان ملاحظة الملاك السابقة
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
           <InfoTip align="start" text={t("no_owners_in_siteplan")} />
         </div>
@@ -584,10 +640,7 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
         </div>
       )}
 
-      <StepActions
-        onPrev={onPrev}
-        onNext={saveAndNext}
-      />
+      <StepActions onPrev={onPrev} onNext={saveAndNext} />
     </WizardShell>
   );
 }

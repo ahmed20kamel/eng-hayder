@@ -5,13 +5,13 @@ import { api } from "../services/api";
 
 function Card({ title, subtitle, children, actions }) {
   return (
-    <div className="card" style={{ padding: 14 }}>
-      <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+    <div className="card p-14">
+      <div className="row row--space-between row--align-center">
         <div>
-          <div style={{ fontWeight: 700 }}>{title}</div>
+          <div className="fw-700">{title}</div>
           {subtitle ? <div className="mini">{subtitle}</div> : null}
         </div>
-        <div className="row" style={{ gap: 8 }}>{actions}</div>
+        <div className="row row--gap-8">{actions}</div>
       </div>
       {children ? <div className="mt-8">{children}</div> : null}
     </div>
@@ -74,9 +74,11 @@ export default function ProjectView() {
     <div className="container">
       <div className="card card--page">
         <div className="content">
-          <div className="row" style={{ justifyContent:"space-between", alignItems:"center" }}>
-            <h2 style={{ margin: 0 }}>{project?.name ? `📦 ${project.name}` : `📦 مشروع #${projectId}`}</h2>
-            <div className="row" style={{ gap: 8 }}>
+          <div className="row row--space-between row--align-center">
+            <h2 className="page-title">
+              {project?.name ? `📦 ${project.name}` : `📦 مشروع #${projectId}`}
+            </h2>
+            <div className="row row--gap-8">
               <Link className="btn secondary" to="/">الرئيسية ←</Link>
               <Link className="btn" to={`/projects/${projectId}/wizard?step=setup&mode=edit`}>تعديل المشروع</Link>
             </div>
@@ -85,7 +87,7 @@ export default function ProjectView() {
           {loading ? (
             <div className="mini mt-12">⏳ جاري التحميل…</div>
           ) : (
-            <div className="stack mt-12" style={{ gap: 12 }}>
+            <div className="stack mt-12 stack--gap-12">
               {/* معلومات المشروع */}
               <Card
                 title="🧱 معلومات المشروع (عرض)"
@@ -97,7 +99,7 @@ export default function ProjectView() {
                   </>
                 }
               >
-                <div className="mini" style={{ lineHeight: 1.8 }}>
+                <div className="mini lh-18">
                   <div>تصنيف: {project?.project_type || "—"}</div>
                   {project?.villa_category ? <div>الفئة الفرعية: {project.villa_category}</div> : null}
                   <div>نوع العقد: {project?.contract_type || "—"}</div>

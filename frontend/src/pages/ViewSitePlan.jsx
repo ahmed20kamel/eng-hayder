@@ -8,7 +8,6 @@ export default function ViewSitePlan() {
   const { projectId } = useParams();
   const [loading, setLoading] = useState(true);
 
-  // نمرر setup للـStep عشان الديفولتات (land_use/…)
   const [setup, setSetup] = useState({ projectType: "", villaCategory: "", contractType: "" });
 
   useEffect(() => {
@@ -36,19 +35,21 @@ export default function ViewSitePlan() {
     <div className="container">
       <div className="card card--page">
         <div className="content">
-          <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-            <h2 style={{ margin: 0 }}>📐 مخطط الأرض — عرض</h2>
-            <div className="row" style={{ gap: 8 }}>
-              <Link className="btn secondary" to={`/projects/${projectId}`}>لوحة المشروع ←</Link>
-              <Link className="btn" to={`/projects/${projectId}/wizard`}>فتح المعالج</Link>
+          <div className="row row--space-between row--align-center">
+            <h2 className="page-title">📐 مخطط الأرض — عرض</h2>
+            <div className="row row--gap-8">
+              <Link className="btn secondary" to={`/projects/${projectId}`}>
+                لوحة المشروع ←
+              </Link>
+              <Link className="btn" to={`/projects/${projectId}/wizard`}>
+                فتح المعالج
+              </Link>
             </div>
           </div>
 
           {loading ? (
             <div className="mini mt-12">⏳ جاري التحميل…</div>
           ) : (
-            // 👇 نستخدم نفس الكمبوننت بتاع الخطوة — هي نفسها بتجيب البيانات
-            // ولأن عندك useEffect جوّاها بيحط isView=true لما يلاقي سجل، هتظهر فيو كاملة بكل الحقول.
             <div className="mt-12">
               <SitePlanStep projectId={projectId} setup={setup} onPrev={null} onNext={null} />
             </div>

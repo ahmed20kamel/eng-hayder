@@ -11,9 +11,9 @@ import SitePlanStep from "./steps/SitePlanStep";
 import LicenseStep from "./steps/LicenseStep";
 import ContractStep from "./steps/ContractStep";
 import SetupSummary from "./components/SetupSummary.jsx";
-import InfoTip from "./components/InfoTip"; // ⬅️ الأيقونة الجديدة بدل البانر
+import InfoTip from "./components/InfoTip";
 
-const EMPTY_SETUP = { projectType: "", villaCategory: "", contractType: "" }; // (احتياطي)
+const EMPTY_SETUP = { projectType: "", villaCategory: "", contractType: "" };
 const STEP_INDEX = { setup: 0, siteplan: 1, license: 2, contract: 3 };
 
 export default function WizardPage() {
@@ -23,17 +23,15 @@ export default function WizardPage() {
   const { projectId } = useParams();
   const [params] = useSearchParams();
 
-  // query params
-  const mode = (params.get("mode") || "edit").toLowerCase(); // "edit" | "view"
+  const mode = (params.get("mode") || "edit").toLowerCase();
   const isView = mode === "view";
-  const stepParam = (params.get("step") || "setup").toLowerCase(); // "setup" | "siteplan" | "license" | "contract"
+  const stepParam = (params.get("step") || "setup").toLowerCase();
 
   const { setup, setSetup } = useWizardState();
 
   const [project, setProject] = useState(null);
   const [index, setIndex] = useState(0);
 
-  // تحميل بيانات المشروع + تهيئة setup
   useEffect(() => {
     if (!projectId) return;
     (async () => {
@@ -45,9 +43,7 @@ export default function WizardPage() {
           villaCategory: data?.villa_category || "",
           contractType: data?.contract_type || "",
         });
-      } catch {
-        // ignore
-      }
+      } catch { /* ignore */ }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
@@ -60,7 +56,6 @@ export default function WizardPage() {
     (setup.villaCategory === "residential" || setup.villaCategory === "commercial") &&
     setup.contractType === "new";
 
-  // اضبط الفهرس حسب ?step= (مع مراعاة المسار المتاح)
   useEffect(() => {
     const wanted = STEP_INDEX[stepParam] ?? 0;
     const maxIndex = allowSitePlanFlow ? 3 : 0;
@@ -102,16 +97,14 @@ export default function WizardPage() {
     if (!allowSitePlanFlow) return false;
     return setupHasAllSelections();
   };
-  const onStepClick = (i) => {
-    if (canEnter(i)) setIndex(i);
-  };
+  const onStepClick = (i) => { if (canEnter(i)) setIndex(i); };
 
   const Current = STEPS[index].Component;
 
   return (
     <div className="container">
       <div className="card">
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+        <div className="row row--space-between row--align-center">
           <div className="mini">
             {project?.name ? `${labels.projectPrefix}: ${project.name}` : null}
           </div>
@@ -134,18 +127,18 @@ export default function WizardPage() {
                 disabled={locked}
               >
                 <span className="step-dot">{i + 1}</span>
-                <Icon style={{ marginInlineEnd: 8 }} />
+                <Icon className="mie-8" />
                 {title}
               </button>
             );
           })}
         </div>
 
-        {/* Info (i) – بدل البانر */}
+        {/* Info (i) */}
         {index === 0 && (
-          <div className="mt-8" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div className="row row--align-center row--gap-8 mt-8">
             <InfoTip wide align="start" text={labels.infoNote} />
-            <span className="mini" style={{ color: "#6b7a90" }}>اضغط على (i) للمعلومة.</span>
+            <span className="mini">{/* muted بالفعل */}اضغط على (i) للمعلومة.</span>
           </div>
         )}
 

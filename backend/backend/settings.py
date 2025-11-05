@@ -1,3 +1,4 @@
+# backend/backend/settings.py
 from pathlib import Path
 import os
 
@@ -14,7 +15,6 @@ DEBUG = os.getenv("DEBUG", "True").lower() == "true"
 ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
-    "[::1]",
     "eng-hayder.onrender.com",            # Backend على Render
     "eng-hayder-frontend.onrender.com",   # Frontend على Render
 ]
@@ -95,11 +95,11 @@ DATABASES = {
 CORS_ALLOW_CREDENTIALS = True
 
 if DEBUG:
-    # تطوير: اسمح لكل الأصول
+    # تطوير: اسمح لكل الأصول (المكتبة هترد بـ Origin الفعلي مش *)
     CORS_ALLOW_ALL_ORIGINS = True
     CORS_ALLOWED_ORIGINS = []
 else:
-    # إنتاج: اسمح فقط للواجهة على Render
+    # إنتاج: اسمح فقط لواجهة Render
     CORS_ALLOW_ALL_ORIGINS = False
     CORS_ALLOWED_ORIGINS = [
         "https://eng-hayder-frontend.onrender.com",
@@ -137,9 +137,6 @@ else:
     CSRF_COOKIE_SAMESITE = "None"
     SESSION_COOKIE_SAMESITE = "None"
 
-# لو بتشتغل خلف Proxy/Load Balancer (Render)
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-
 # =========================
 # Static / Media
 # =========================
@@ -147,12 +144,7 @@ STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
-
-# WhiteNoise للتجميعات
-if DEBUG:
-    STATICFILES_STORAGE = "whitenoise.storage.CompressedStaticFilesStorage"
-else:
-    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -161,12 +153,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # =========================
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
-    # 📌 مهم: دعم رفع الملفات من SitePlan/License
-    "DEFAULT_PARSER_CLASSES": [
-        "rest_framework.parsers.JSONParser",
-        "rest_framework.parsers.FormParser",
-        "rest_framework.parsers.MultiPartParser",
-    ],
+    "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
 }
 
 # =========================

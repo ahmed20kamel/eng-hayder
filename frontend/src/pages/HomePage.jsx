@@ -14,7 +14,6 @@ export default function HomePage() {
     try {
       setLoading(true);
 
-      // اسم افتراضي مترجم حسب اللغة الحالية
       const payload = {
         name: t("homepage_default_project_name"),
         type: "residential",
@@ -22,15 +21,12 @@ export default function HomePage() {
       };
 
       const res = await api.post("projects/", payload);
-
-      // ✅ أي 2xx نجاح + لو رجع body وفيه id نوجّه مباشرة
       const id = res?.data?.id;
       if (id) {
         navigate(`/projects/${id}/wizard`);
         return;
       }
 
-      // 🔁 في حال السيرفر رجّع body فاضي: هات أحدث مشروع
       const list = await api.get("projects/");
       const latestId =
         Array.isArray(list.data) && list.data.length ? list.data[0].id : null;
@@ -54,22 +50,13 @@ export default function HomePage() {
   return (
     <div className="container">
       <div className="card card--page">
-        <div
-          className="content"
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 12,
-            textAlign: "center",
-          }}
-        >
-          <h2 style={{ color: "var(--primary)" }}>{t("homepage_title")}</h2>
-          <p className="mini" style={{ maxWidth: 520 }}>
+        <div className="content stack items-center stack--gap-12 text-center">
+          <h2 className="text-primary">{t("homepage_title")}</h2>
+          <p className="mini max-w-520">
             {t("homepage_subtitle")}
           </p>
           <button onClick={createProject} disabled={loading} className="btn">
-            <FaPlusCircle /> &nbsp;
+            <FaPlusCircle />&nbsp;
             {loading ? t("homepage_creating") : t("homepage_cta")}
           </button>
         </div>

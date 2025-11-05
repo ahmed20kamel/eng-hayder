@@ -1,15 +1,18 @@
 // frontend/src/services/api.js
 import axios from "axios";
 
-// ✅ رابط الباك إند الثابت على Render
-const ROOT = "https://eng-hayder.onrender.com";
+const isDev = import.meta.env.DEV;
+// في الديف نستخدم proxy => /api/
+// في البرود نستخدم VITE_API_URL
+const ROOT = isDev
+  ? ""
+  : (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
 
 const api = axios.create({
-  baseURL: `${ROOT}/api/`,
+  baseURL: isDev ? "/api/" : `${ROOT}/api/`,
   withCredentials: true,
 });
 
-// ✅ قراءة CSRF من الكوكي
 function getCookie(name) {
   const value = `; ${document.cookie}`;
   const parts = value.split(`; ${name}=`);
@@ -18,12 +21,11 @@ function getCookie(name) {
 }
 
 let csrfReady = false;
-
-// ✅ تأكيد وجود الـ CSRF قبل أي POST / PUT / PATCH / DELETE
 async function ensureCsrf() {
   if (csrfReady && getCookie("csrftoken")) return;
   try {
-    await axios.get(`${ROOT}/api/csrf/`, {
+    const url = isDev ? "/api/csrf/" : `${ROOT}/api/csrf/`;
+    await axios.get(url, {
       withCredentials: true,
       headers: { "X-Requested-With": "XMLHttpRequest" },
     });
@@ -47,7 +49,6 @@ api.interceptors.request.use(async (config) => {
   return config;
 });
 
-// ✅ إظهار الأخطاء في الـ Console بشكل مرتب
 api.interceptors.response.use(
   (res) => res,
   (err) => {

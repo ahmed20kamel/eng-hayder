@@ -10,6 +10,9 @@ const resources = {
       dashboard: "Dashboard",
       navbar_title: "Dashboard",
 
+      // Extra generic
+      developer: "Developer",
+
       // ===== Sidebar =====
       sidebar_title: "Menu",
       sidebar_nav: "Navigation",
@@ -26,7 +29,6 @@ const resources = {
 
       // ===== Language switcher =====
       language_switch_title: "Switch language",
-      // IMPORTANT: this label always shows the *other* language
       language: "العربية",
 
       // ===== HomePage =====
@@ -378,6 +380,9 @@ const resources = {
       dashboard: "الرئيسية",
       navbar_title: "لوحة التحكم",
 
+      // Extra generic
+      developer: "المطور",
+
       // ===== Sidebar =====
       sidebar_title: "القائمة",
       sidebar_nav: "التنقل",
@@ -472,7 +477,7 @@ const resources = {
       land_use: "استخدام الأرض (مسمى التخصيص)",
       land_use_sub: "استخدام الأرض الفرعي",
       base_district: "المنطقة الأساسية",
-      overlay_district: "المنطقة التراكبية",
+      overlay_district: "المنطقة المتداخلة",
       allocation_date: "تاريخ التخصيص",
 
       // ===== Developer =====
@@ -701,7 +706,7 @@ const resources = {
         allocation_type: "مسمى التخصيص",
         land_use: "استخدام الأرض",
         base_district: "المنطقة الأساسية",
-        overlay_district: "منطقة التراكب",
+        overlay_district: "المنطقة المتداخلة",
 
         project_no: "رقم المشروع",
         project_name: "اسم المشروع",
@@ -740,9 +745,9 @@ i18n.use(initReactI18next).init({
   interpolation: { escapeValue: false },
 });
 
-// اضبط اتجاه الصفحة حسب اللغة
+// اضبط اتجاه الصفحة حسب اللغة (يدعم ar / ar-AE / ar-SA ...)
 export function applyDir(lang) {
-  const isRTL = lang === "ar";
+  const isRTL = /^ar\b/i.test(lang || "");
   document.documentElement.lang = lang;
   document.documentElement.dir = isRTL ? "rtl" : "ltr";
 }

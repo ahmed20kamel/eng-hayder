@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import WizardShell from "../components/WizardShell";
 import StepActions from "../components/StepActions";
-import InfoTip from "../components/InfoTip"; // ⬅️ الأيقونة الجديدة
+import InfoTip from "../components/InfoTip";
 import { api } from "../../../services/api";
 
 export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isView }) {
@@ -12,7 +12,8 @@ export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isVi
   const lang = i18n.language;
   const { projectId } = useParams();
 
-  const { projectType, villaCategory, contractType } = value;
+  // ✨ NEW: internalCode
+  const { projectType, villaCategory, contractType, internalCode } = value || {};
   const set = (k, v) => onChange({ ...value, [k]: v });
 
   const baseSelected =
@@ -53,6 +54,15 @@ export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isVi
     categoryTitle: lang === "ar" ? "🏗️ تصنيف المشروع" : "🏗️ Project Category",
     subcatsTitle: lang === "ar" ? "📄 التصنيفات الفرعية" : "📄 Subcategories",
     contractTypeTitle: lang === "ar" ? "📝 نوع العقد" : "📝 Contract Type",
+    // ✨ NEW: internal code labels
+    internalCodeTitle: lang === "ar" ? "🔐 الكود الداخلي للمشروع" : "🔐 Internal Project Code",
+    internalCodeHelp:
+      lang === "ar"
+        ? "كود مختصر داخلي، أحرف وأرقام وشرطات فقط. سيتم تحويله تلقائياً إلى UPPERCASE واستبدال المسافات بشرطات."
+        : "Short internal code, letters/digits/hyphens only. Auto-UPPERCASE; spaces become hyphens.",
+    internalCodePlaceholder:
+      lang === "ar" ? "مثال: VILLA-RES-001" : "e.g., VILLA-RES-001",
+
     readyNote:
       lang === "ar"
         ? `اضغط «التالي» للانتقال إلى ${"📐 " + t("wizard_step_siteplan")} ثم ${"📄 " + t("wizard_step_license")} و ${"📝 " + t("wizard_step_contract")}.`
@@ -144,7 +154,17 @@ export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isVi
     </div>
   );
 
-  // حفظ قبل الانتقال
+  // ✨ NEW: formatter for internal code
+  const formatInternalCode = (raw) => {
+    if (!raw) return "";
+    return raw
+      .toUpperCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^A-Z0-9-]/g, "")
+      .replace(/-+/g, "-")
+      .slice(0, 40); // حد أقصى للطول لو حابب
+  };
+
   const handleSaveAndNext = async () => {
     if (!projectId) return;
     try {
@@ -152,6 +172,8 @@ export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isVi
         project_type: projectType || null,
         villa_category: projectType === "villa" ? (villaCategory || null) : null,
         contract_type: contractType || null,
+        // ✨ NEW: send to API
+        internal_code: internalCode ? formatInternalCode(internalCode) : null,
       };
       await api.patch(`projects/${projectId}/`, payload);
       setLocalIsView(true);
@@ -165,25 +187,45 @@ export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isVi
   return (
     <WizardShell title={labels.pageTitle}>
       {localIsView && (
-        <div
-          className="row"
-          style={{
-            justifyContent: lang === "ar" ? "flex-start" : "flex-end",
-            marginBottom: 12,
-          }}
-        >
-          <button
-            type="button"
-            className="btn secondary"
-            onClick={() => setLocalIsView(false)}
-          >
+        <div className={`row ${lang === "ar" ? "justify-start" : "justify-end"} mb-12`}>
+          <button type="button" className="btn secondary" onClick={() => setLocalIsView(false)}>
             ✏️ {labels.edit}
           </button>
         </div>
       )}
 
+      {/* ✨ NEW: Internal Code field */}
+      <h4 className="inline-flex ai-center gap-6">
+        {labels.internalCodeTitle}
+        <InfoTip inline align="start" text={labels.internalCodeHelp} />
+      </h4>
+
+      {localIsView ? (
+        <div className="card" role="group" aria-label={labels.internalCodeTitle}>
+          <div className="p-8 mono">{(internalCode && formatInternalCode(internalCode)) || "—"}</div>
+        </div>
+      ) : (
+        <div className="card" role="group" aria-label={labels.internalCodeTitle}>
+          <div className="p-8">
+            <input
+              type="text"
+              inputMode="text"
+              className="input w-100 mono"
+              placeholder={labels.internalCodePlaceholder}
+              value={internalCode || ""}
+              onChange={(e) => set("internalCode", formatInternalCode(e.target.value))}
+              aria-describedby="internal-code-help"
+              maxLength={40}
+            />
+            <div id="internal-code-help" className="muted mt-4">
+              {labels.internalCodeHelp}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* تصنيف المشروع + أيقونة المعلومة */}
-      <h4 style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <h4 className="inline-flex ai-center gap-6">
         {labels.categoryTitle}
         <InfoTip
           inline
@@ -202,9 +244,7 @@ export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isVi
 
       {localIsView ? (
         <div className="card" role="group" aria-label={labels.categoryTitle}>
-          <div style={{ padding: 8 }}>
-            {labelMap.projectType[projectType] || "—"}
-          </div>
+          <div className="p-8">{labelMap.projectType[projectType] || "—"}</div>
         </div>
       ) : (
         renderChips(chipsProjectTypes, projectType, "projectType")
@@ -212,10 +252,7 @@ export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isVi
 
       {projectType === "villa" && (
         <>
-          <h4
-            className="mt-12"
-            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-          >
+          <h4 className="mt-12 inline-flex ai-center gap-6">
             {labels.subcatsTitle}
             <InfoTip
               inline
@@ -225,9 +262,7 @@ export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isVi
           </h4>
           {localIsView ? (
             <div className="card" role="group" aria-label={labels.subcatsTitle}>
-              <div style={{ padding: 8 }}>
-                {labelMap.villaCategory[villaCategory] || "—"}
-              </div>
+              <div className="p-8">{labelMap.villaCategory[villaCategory] || "—"}</div>
             </div>
           ) : (
             renderChips(villaSubcategories, villaCategory, "villaCategory")
@@ -235,10 +270,7 @@ export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isVi
         </>
       )}
 
-      <h4
-        className="mt-12"
-        style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-      >
+      <h4 className="mt-12 inline-flex ai-center gap-6">
         {labels.contractTypeTitle}
         <InfoTip
           inline
@@ -253,15 +285,11 @@ export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isVi
 
       {localIsView ? (
         <div className="card" role="group" aria-label={labels.contractTypeTitle}>
-          <div style={{ padding: 8 }}>
-            {labelMap.contractType[contractType] || "—"}
-          </div>
+          <div className="p-8">{labelMap.contractType[contractType] || "—"}</div>
         </div>
       ) : (
         renderChips(contractTypes, contractType, "contractType")
       )}
-
-      {/* ✅ تم حذف الشكل القديم (الأيقونة في سطر منفصل) لأنه أصبح داخل العناوين */}
 
       <StepActions
         onPrev={onPrev}

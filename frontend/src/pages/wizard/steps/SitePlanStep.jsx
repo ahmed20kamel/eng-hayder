@@ -57,7 +57,15 @@ function formatServerErrors(data) {
 
 export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
   const { t, i18n: i18next } = useTranslation();
-  const isAR = i18next.language === "ar";
+  const isAR = /^ar\b/i.test(i18next.language || "");
+
+  /* ========== Fallback labels ==========
+     نضمن ظهور "المنطقة المتداخلة" حتى لو ملف الترجمة القديم لسه محمّل */
+  const overlayLabel = t("overlay_district", "المنطقة المتداخلة");
+  const overlayPH = t("overlay_district_ph", "مثل: ADM, VR, UGB…");
+  const devParen = ` (${t("developer", "المطور")})`;
+  const projectNoLabel = `${t("project_no")}${devParen}`;
+  const projectNameLabel = `${t("project_name_f")}${devParen}`;
 
   /* =================== القوائم الثابتة (عرض ثنائي اللغة، قيم ثابتة) =================== */
   const MUNICIPALITIES = useMemo(
@@ -137,6 +145,7 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
   const setF = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
   // خيارات مبنية على اللغة الحالية
+  const isRtlClass = isAR ? "dir-rtl" : "dir-ltr";
   const municipalityOptions = MUNICIPALITIES.map((m) => ({
     value: m.value,
     label: isAR ? m.label.ar : m.label.en,
@@ -186,7 +195,6 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
   const [isView, setIsView] = useState(false);
 
   /* =================== تواريخ (تحويل) =================== */
-  // تحويل الأرقام العربية إلى إنجليزية + تنظيف placeholder
   const normalizeDigits = (s) =>
     String(s ?? "")
       .replace(/[\u0660-\u0669]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d))
@@ -199,12 +207,11 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
     if (!d) return "";
     const s = normalizeDigits(d);
     if (!s || isPlaceholderDate(s)) return "";
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; // جاهز للـ <input type="date">
-    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s); // dd/mm/yyyy
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
     return m ? `${m[3]}-${m[2]}-${m[1]}` : s;
   };
 
-  // ترجّع "" لو مفيش تاريخ صالح (عشان نقدر نتجاهله لاحقًا)
   const toApiDate = (d) => {
     if (!d) return "";
     const s = normalizeDigits(d);
@@ -261,7 +268,7 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
               }))
             );
           }
-          setIsView(true); // ← إظهار فيو عند الرجوع للخطوة
+          setIsView(true);
         }
       } catch {}
     })();
@@ -306,7 +313,6 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
 
   /* =================== حفظ + تحققات =================== */
   const buildPayload = () => {
-    // نحضّر التواريخ الأساسية
     const application_date_api = toApiDate(form.application_date);
     const allocation_date_api = toApiDate(form.allocation_date);
 
@@ -316,7 +322,6 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
       allocation_date: allocation_date_api || undefined,
     };
 
-    // تحقّق علاقة التاريخين لو الاتنين موجودين
     if (application_date_api && allocation_date_api) {
       const alloc = new Date(allocation_date_api);
       const app = new Date(application_date_api);
@@ -325,11 +330,9 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
       }
     }
 
-    // الحصص
     const sum = owners.reduce((s, o) => s + (parseFloat(o.share_percent) || 0), 0);
     if (Math.round(sum) !== 100) throw new Error(t("errors.owners_share_sum_100"));
 
-    // الاسم عربي + إنجليزي
     owners.forEach((o, idx) => {
       if (!o.owner_name_ar?.trim() || !o.owner_name_en?.trim()) {
         throw new Error(t("errors.owner_name_bilingual_required", { idx: idx + 1 }));
@@ -338,27 +341,24 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
 
     const hasOwnerFiles = owners.some((o) => !!o.id_attachment);
 
-    // ====== FormData لو فيه ملفات ======
     if (form.application_file || hasOwnerFiles) {
       const fd = new FormData();
 
-      // نضيف الحقول غير التاريخية كلها، وبالنسبة للتواريخ نضيفها فقط لو فيها قيمة
       Object.entries(normalized).forEach(([k, v]) => {
         if (k === "application_file") return;
-        if ((k === "application_date" || k === "allocation_date")) {
-          if (v) fd.append(k, v); // بس لما يكون في تاريخ
+        if (k === "application_date" || k === "allocation_date") {
+          if (v) fd.append(k, v);
         } else {
           fd.append(k, v ?? "");
         }
       });
 
-      // الملاك
       owners.forEach((o, i) => {
         Object.entries(o).forEach(([k, v]) => {
           if (k === "id_attachment") return;
           if (k === "id_issue_date" || k === "id_expiry_date") {
             const vd = toApiDate(v);
-            if (vd) fd.append(`owners[${i}][${k}]`, vd); // بس لما يكون موجود
+            if (vd) fd.append(`owners[${i}][${k}]`, vd);
             return;
           }
           fd.append(`owners[${i}][${k}]`, v ?? "");
@@ -371,7 +371,6 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
       return fd;
     }
 
-    // ====== JSON عادي ======
     const ownersNormalized = owners.map((o) => {
       const issue = toApiDate(o.id_issue_date);
       const expiry = toApiDate(o.id_expiry_date);
@@ -379,14 +378,12 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
         ...o,
         owner_name: o.owner_name_ar?.trim() || "",
       };
-      // نحذف التاريخين لو فاضيين
       if (issue) base.id_issue_date = issue; else delete base.id_issue_date;
       if (expiry) base.id_expiry_date = expiry; else delete base.id_expiry_date;
       return base;
     });
 
     const jsonPayload = { ...normalized, owners: ownersNormalized };
-    // نحذف تواريخ المستوى الأعلى لو فاضية
     if (!application_date_api) delete jsonPayload.application_date;
     if (!allocation_date_api) delete jsonPayload.allocation_date;
 
@@ -407,7 +404,7 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
         if (created?.id) setExistingId(created.id);
       }
       setErrorMsg("");
-      setIsView(true); // ← التحويل للوضع القرائي بعد الحفظ
+      setIsView(true);
       onNext && onNext();
     } catch (err) {
       const serverData = err?.response?.data;
@@ -424,30 +421,21 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
     <WizardShell icon={FaMap} title={`📐 ${t("step_siteplan")}`}>
       {/* مودال الخطأ */}
       {errorMsg && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,.35)",
-            zIndex: 2000,
-            display: "grid",
-            placeItems: "center",
-          }}
-        >
-          <div className="card" style={{ maxWidth: 720, width: "92%", direction: isAR ? "rtl" : "ltr" }}>
-            <div className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <h3 style={{ margin: 0 }}>{t("warning")} ⚠️</h3>
+        <div role="dialog" aria-modal="true" className="backdrop">
+          <div className={`modal card ${isRtlClass}`}>
+            <div className="row justify-between mb-10">
+              <h3 className="m-0">{t("warning")} ⚠️</h3>
             </div>
-            <div className="alert error" style={{ marginBottom: 12 }}>
+            <div className="alert error mb-12">
               <div className="title">{t("save_error")}</div>
             </div>
-            <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit", fontSize: "18px", lineHeight: 1.7 }}>
+            <pre className="modal__body-text">
               {errorMsg}
             </pre>
-            <div className="row" style={{ justifyContent: "flex-start", marginTop: 16 }}>
-              <button className="btn" type="button" onClick={() => setErrorMsg("")}>{t("ok")}</button>
+            <div className="row justify-start mt-16">
+              <button className="btn" type="button" onClick={() => setErrorMsg("")}>
+                {t("ok")}
+              </button>
             </div>
           </div>
         </div>
@@ -455,7 +443,7 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
 
       {/* زر تعديل يظهر في وضع العرض */}
       {isView && (
-        <div className="row" style={{ justifyContent: isAR ? "flex-start" : "flex-end", marginBottom: 12 }}>
+        <div className={`row ${isAR ? "justify-start" : "justify-end"} mb-12`}>
           <button type="button" className="btn secondary" onClick={() => setIsView(false)}>
             ✏️ {t("edit")}
           </button>
@@ -479,7 +467,7 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
             <Field label={t("allocation_type")}><div>{form.allocation_type || "-"}</div></Field>
             <Field label={t("land_use")}><div>{form.land_use || "-"}</div></Field>
             <Field label={t("base_district")}><div>{form.base_district || "-"}</div></Field>
-            <Field label={t("overlay_district")}><div>{form.overlay_district || "-"}</div></Field>
+            <Field label={overlayLabel}><div>{form.overlay_district || "-"}</div></Field>
             <Field label={t("allocation_date")}><div>{form.allocation_date || "-"}</div></Field>
           </div>
         </div>
@@ -563,12 +551,12 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
             />
           </Field>
 
-          <Field label={t("overlay_district")}>
+          <Field label={overlayLabel}>
             <input
               className="input"
               value={form.overlay_district}
               onChange={(e) => setF("overlay_district", e.target.value)}
-              placeholder={t("overlay_district_ph")}
+              placeholder={overlayPH}
             />
           </Field>
 
@@ -586,8 +574,8 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
             <div className="card">
               <div className="form-grid cols-3">
                 <Field label={t("developer_name")}><div>{form.developer_name || "-"}</div></Field>
-                <Field label={t("project_no")}><div>{form.project_no || "-"}</div></Field>
-                <Field label={t("project_name_f")}><div>{form.project_name || "-"}</div></Field>
+                <Field label={projectNoLabel}><div>{form.project_no || "-"}</div></Field>
+                <Field label={projectNameLabel}><div>{form.project_name || "-"}</div></Field>
               </div>
             </div>
           ) : (
@@ -595,10 +583,10 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
               <Field label={t("developer_name")}>
                 <input className="input" value={form.developer_name} onChange={(e) => setF("developer_name", e.target.value)} />
               </Field>
-              <Field label={t("project_no")}>
+              <Field label={projectNoLabel}>
                 <input className="input" type="number" value={form.project_no} onChange={(e) => setF("project_no", e.target.value)} />
               </Field>
-              <Field label={t("project_name_f")}>
+              <Field label={projectNameLabel}>
                 <input className="input" value={form.project_name} onChange={(e) => setF("project_name", e.target.value)} />
               </Field>
             </div>
@@ -733,7 +721,7 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
       <h4 className="mt-16">📝 {t("notes")}</h4>
       {isView ? (
         <Field label={t("notes_general")}>
-          <div style={{ whiteSpace: "pre-wrap" }}>{form.notes || "-"}</div>
+          <div className="pre-wrap">{form.notes || "-"}</div>
         </Field>
       ) : (
         <Field label={t("notes_general")}>
