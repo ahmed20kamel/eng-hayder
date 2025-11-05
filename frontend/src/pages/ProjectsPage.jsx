@@ -1,43 +1,62 @@
 // src/pages/ProjectsPage.jsx
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../services/api";
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // حذف احترافي
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [targetProject, setTargetProject] = useState(null); // {id, name}
   const [deletingId, setDeletingId] = useState(null);
 
-  useEffect(() => { loadProjects(); }, []);
+  // Toast بسيط
+  const [toast, setToast] = useState(null); // {type: 'success'|'error', msg}
+  const toastTimer = useRef(null);
+
+  useEffect(() => { loadProjects(); return () => clearTimeout(toastTimer.current); }, []);
 
   const loadProjects = async () => {
     try {
-      const { data } = await api.get("projects/"); // تأكد من السلاش
-      // ✅ يقبل Array مباشر أو شكل Paginated (results/items/data)
+      const { data } = await api.get("projects/");
       const items = Array.isArray(data) ? data : (data?.results || data?.items || data?.data || []);
       setProjects(items);
     } catch (e) {
       console.error(e);
       setProjects([]);
+      showToast("error", "تعذّر تحميل المشاريع.");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = async (id) => {
-    const confirmDelete = window.confirm(
-      "⚠️ هل أنت متأكد من حذف هذا المشروع؟\nسيتم حذف جميع البيانات المتعلقة به."
-    );
-    if (!confirmDelete) return;
+  const showToast = (type, msg) => {
+    setToast({ type, msg });
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2500);
+  };
 
+  // فتح الـ Dialog
+  const askDelete = (p) => {
+    setTargetProject({ id: p.id, name: p?.name || `مشروع #${p?.id}` });
+    setConfirmOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!targetProject?.id) return;
+    const id = targetProject.id;
     try {
       setDeletingId(id);
       await api.delete(`projects/${id}/`);
-      // حدث القائمة محليًا بدون ريفريش
       setProjects((prev) => prev.filter((p) => p.id !== id));
+      showToast("success", "تم حذف المشروع بنجاح.");
+      setConfirmOpen(false);
+      setTargetProject(null);
     } catch (e) {
       console.error("Delete failed:", e);
-      alert("❌ حدث خطأ أثناء الحذف.");
+      showToast("error", "حدث خطأ أثناء الحذف.");
     } finally {
       setDeletingId(null);
     }
@@ -104,10 +123,7 @@ export default function ProjectsPage() {
                         </div>
                       </td>
 
-                      <td>
-                        <code className="prj-code">{p?.internal_code || `PRJ-${p?.id ?? i+1}`}</code>
-                      </td>
-
+                      <td><code className="prj-code">{p?.internal_code || `PRJ-${p?.id ?? i+1}`}</code></td>
                       <td className="prj-nowrap">{p?.project_type || "—"}</td>
                       <td className="prj-nowrap">{p?.contract_type || "—"}</td>
 
@@ -125,11 +141,11 @@ export default function ProjectsPage() {
 
                         <button
                           className="prj-btn prj-btn--danger"
-                          onClick={() => handleDelete(p.id)}
+                          onClick={() => askDelete(p)}
                           disabled={deletingId === p.id}
                           title="حذف المشروع"
                         >
-                          {deletingId === p.id ? "جارٍ الحذف..." : "حذف ✖"}
+                          حذف
                         </button>
                       </td>
                     </tr>
@@ -147,6 +163,75 @@ export default function ProjectsPage() {
             </table>
           </div>
         )}
+      </div>
+
+      {/* Toast */}
+      {toast && (
+        <div className={`toast ${toast.type === "success" ? "toast--ok" : "toast--err"}`} role="status" aria-live="polite">
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Confirm Dialog */}
+      {confirmOpen && (
+        <ConfirmDialog
+          title="تأكيد الحذف"
+          desc={
+            <>
+              هل أنت متأكد من حذف المشروع
+              <strong style={{marginInline: 6}}>{targetProject?.name}</strong>؟
+              <br />
+              هذا الإجراء لا يمكن التراجع عنه.
+            </>
+          }
+          confirmLabel={deletingId ? "جارٍ الحذف..." : "حذف نهائي"}
+          cancelLabel="إلغاء"
+          onClose={() => !deletingId && setConfirmOpen(false)}
+          onConfirm={handleDelete}
+          danger
+          busy={!!deletingId}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ====== Dialog Component (بدون مكتبات) ====== */
+function ConfirmDialog({ title, desc, confirmLabel, cancelLabel, onClose, onConfirm, danger, busy }) {
+  const dialogRef = useRef(null);
+
+  // إغلاق بالـ ESC و الضغط على الخلفية
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const onBackdrop = (e) => {
+    if (e.target === dialogRef.current) onClose?.();
+  };
+
+  return (
+    <div ref={dialogRef} className="dlg-backdrop" onMouseDown={onBackdrop}>
+      <div className="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-title" aria-describedby="dlg-desc">
+        <div className="dlg-hd">
+          <span id="dlg-title" className="dlg-title">{title}</span>
+        </div>
+        <div id="dlg-desc" className="dlg-body">
+          {desc}
+        </div>
+        <div className="dlg-ft">
+          <button className="prj-btn prj-btn--ghost" onClick={onClose} disabled={busy}>
+            {cancelLabel || "إلغاء"}
+          </button>
+          <button
+            className={`prj-btn ${danger ? "prj-btn--danger" : "prj-btn--primary"}`}
+            onClick={onConfirm}
+            disabled={busy}
+          >
+            {confirmLabel || "تأكيد"}
+          </button>
+        </div>
       </div>
     </div>
   );

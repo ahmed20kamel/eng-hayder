@@ -495,3 +495,50 @@ textarea.input{ min-height:110px; resize: vertical; }
 .prj-btn--danger { background: #d9534f; color: #fff; border: none; }
 .prj-btn--danger:hover { background: #c9302c; }
 .prj-btn--danger:disabled { opacity: .7; cursor: not-allowed; }
+/* زر الخطر */
+.prj-btn--danger {
+  background: #e53935;
+  color: #fff;
+  border: none;
+}
+.prj-btn--danger:hover { background: #c62828; }
+.prj-btn--danger:disabled { opacity: .7; cursor: not-allowed; }
+
+/* محاذاة الأزرار داخل الجدول */
+.prj-actions { display: flex; gap: .5rem; align-items: center; }
+
+/* ====== Dialog ====== */
+.dlg-backdrop{
+  position: fixed; inset: 0; background: rgba(15,23,42,.45);
+  display: grid; place-items: center; z-index: 60; backdrop-filter: blur(2px);
+}
+.dlg{
+  width: min(520px, 92vw);
+  background: #fff; color: #111827; border-radius: 14px;
+  box-shadow: 0 20px 45px rgba(0,0,0,.12);
+  overflow: hidden; animation: dlg-pop .16s ease-out;
+}
+@keyframes dlg-pop{ from{ transform: scale(.97); opacity: 0 } to{ transform: scale(1); opacity: 1 } }
+.dlg-hd{ padding: 16px 20px; border-bottom: 1px solid #f1f5f9; }
+.dlg-title{ font-weight: 700; font-size: 1.05rem; }
+.dlg-body{ padding: 18px 20px; line-height: 1.8; }
+.dlg-body strong{ font-weight: 700; }
+.dlg-ft{ padding: 14px 20px; display: flex; gap: .6rem; justify-content: flex-start; border-top: 1px solid #f1f5f9; }
+.prj-btn--ghost{ background: #f8fafc; color:#0f172a; border:1px solid #e2e8f0; }
+.prj-btn--ghost:hover{ background:#f1f5f9; }
+
+/* ====== Toast ====== */
+.toast{
+  position: fixed; bottom: 18px; inset-inline: 18px;
+  max-width: 420px; margin-inline-start: auto;
+  background: #111827; color:#fff; padding: 12px 14px; border-radius: 10px;
+  box-shadow: 0 10px 25px rgba(0,0,0,.15); z-index: 70;
+}
+.toast--ok{ background: #166534; }
+.toast--err{ background: #b91c1c; }
+
+/* كود داخلي كميدج */
+.prj-code{
+  display:inline-block; background:#f1f5f9; color:#0f172a;
+  padding:4px 8px; border-radius:8px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
