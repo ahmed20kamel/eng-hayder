@@ -492,3 +492,6 @@ textarea.input{ min-height:110px; resize: vertical; }
   .form-grid.cols-3,
   .form-grid.cols-2{ grid-template-columns: 1fr; }
 }
+.prj-btn--danger { background: #d9534f; color: #fff; border: none; }
+.prj-btn--danger:hover { background: #c9302c; }
+.prj-btn--danger:disabled { opacity: .7; cursor: not-allowed; }

@@ -6,6 +6,7 @@ import { api } from "../services/api";
 export default function ProjectsPage() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => { loadProjects(); }, []);
 
@@ -20,6 +21,25 @@ export default function ProjectsPage() {
       setProjects([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    const confirmDelete = window.confirm(
+      "⚠️ هل أنت متأكد من حذف هذا المشروع؟\nسيتم حذف جميع البيانات المتعلقة به."
+    );
+    if (!confirmDelete) return;
+
+    try {
+      setDeletingId(id);
+      await api.delete(`projects/${id}/`);
+      // حدث القائمة محليًا بدون ريفريش
+      setProjects((prev) => prev.filter((p) => p.id !== id));
+    } catch (e) {
+      console.error("Delete failed:", e);
+      alert("❌ حدث خطأ أثناء الحذف.");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -102,6 +122,15 @@ export default function ProjectsPage() {
                       <td className="prj-actions">
                         <Link className="prj-btn prj-btn--primary" to={`/projects/${p?.id}/wizard`}>تعديل</Link>
                         <Link className="prj-btn prj-btn--ghost"   to={`/projects/${p?.id}`}>عرض →</Link>
+
+                        <button
+                          className="prj-btn prj-btn--danger"
+                          onClick={() => handleDelete(p.id)}
+                          disabled={deletingId === p.id}
+                          title="حذف المشروع"
+                        >
+                          {deletingId === p.id ? "جارٍ الحذف..." : "حذف ✖"}
+                        </button>
                       </td>
                     </tr>
                   );
