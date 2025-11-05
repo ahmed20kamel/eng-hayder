@@ -1,4 +1,3 @@
-// src/pages/wizard/steps/ProjectSetupStep.jsx
 import { useMemo, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
@@ -12,7 +11,7 @@ export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isVi
   const lang = i18n.language;
   const { projectId } = useParams();
 
-  // ✨ NEW: internalCode
+  // ✨ internalCode مضاف
   const { projectType, villaCategory, contractType, internalCode } = value || {};
   const set = (k, v) => onChange({ ...value, [k]: v });
 
@@ -58,10 +57,9 @@ export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isVi
     internalCodeTitle: lang === "ar" ? "🔐 الكود الداخلي للمشروع" : "🔐 Internal Project Code",
     internalCodeHelp:
       lang === "ar"
-        ? "كود مختصر داخلي، أحرف وأرقام وشرطات فقط. سيتم تحويله تلقائياً إلى UPPERCASE واستبدال المسافات بشرطات."
-        : "Short internal code, letters/digits/hyphens only. Auto-UPPERCASE; spaces become hyphens.",
-    internalCodePlaceholder:
-      lang === "ar" ? "مثال: VILLA-RES-001" : "e.g., VILLA-RES-001",
+        ? " يبدأ بالحرف  M وبعدين أرقام فردية فقط (1,3,5,7,9)."
+        : "Must start with M, followed by odd digits only (1,3,5,7,9). Any other characters/even digits are stripped automatically.",
+    internalCodePlaceholder: lang === "ar" ? "مثال: M13579" : "e.g., M13579",
 
     readyNote:
       lang === "ar"
@@ -154,15 +152,16 @@ export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isVi
     </div>
   );
 
-  // ✨ NEW: formatter for internal code
+  // ✨ NEW: formatter for internal code => "M" + odd digits only
+  const toOddDigits = (s) =>
+    (s || "")
+      .replace(/[^0-9]/g, "")  // ارقام فقط
+      .replace(/[02468]/g, ""); // شيل الأرقام الزوجية
+
   const formatInternalCode = (raw) => {
-    if (!raw) return "";
-    return raw
-      .toUpperCase()
-      .replace(/\s+/g, "-")
-      .replace(/[^A-Z0-9-]/g, "")
-      .replace(/-+/g, "-")
-      .slice(0, 40); // حد أقصى للطول لو حابب
+    const digits = toOddDigits(raw);
+    // الحد الأقصى للطول الكلي 40 حرف (M + حتى 39 رقم فردي)
+    return ("M" + digits).slice(0, 40);
   };
 
   const handleSaveAndNext = async () => {
@@ -172,7 +171,7 @@ export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isVi
         project_type: projectType || null,
         villa_category: projectType === "villa" ? (villaCategory || null) : null,
         contract_type: contractType || null,
-        // ✨ NEW: send to API
+        // ✨ NEW: send to API (M + odd digits only)
         internal_code: internalCode ? formatInternalCode(internalCode) : null,
       };
       await api.patch(`projects/${projectId}/`, payload);
@@ -202,17 +201,19 @@ export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isVi
 
       {localIsView ? (
         <div className="card" role="group" aria-label={labels.internalCodeTitle}>
-          <div className="p-8 mono">{(internalCode && formatInternalCode(internalCode)) || "—"}</div>
+          <div className="p-8 mono">
+            {(internalCode && formatInternalCode(internalCode)) || "—"}
+          </div>
         </div>
       ) : (
         <div className="card" role="group" aria-label={labels.internalCodeTitle}>
           <div className="p-8">
             <input
               type="text"
-              inputMode="text"
+              inputMode="numeric"
               className="input w-100 mono"
               placeholder={labels.internalCodePlaceholder}
-              value={internalCode || ""}
+              value={formatInternalCode(internalCode || "")}
               onChange={(e) => set("internalCode", formatInternalCode(e.target.value))}
               aria-describedby="internal-code-help"
               maxLength={40}

@@ -64,6 +64,9 @@ def build_license_snapshot(lic: BuildingLicense):
         "license": {
             "license_type": lic.license_type,
             "project_no": lic.project_no,
+            "project_name": getattr(lic, "project_name", ""),              # ✨
+            "license_project_no": getattr(lic, "license_project_no", ""),  # ✨
+            "license_project_name": getattr(lic, "license_project_name", ""),  # ✨
             "license_no": lic.license_no,
             "issue_date": lic.issue_date.isoformat() if lic.issue_date else None,
             "last_issue_date": lic.last_issue_date.isoformat() if lic.last_issue_date else None,
@@ -91,6 +94,7 @@ def build_license_snapshot(lic: BuildingLicense):
             "contractor_license_no": lic.contractor_license_no,
         },
         "siteplan_snapshot": lic.siteplan_snapshot or {},
+        "owners": getattr(lic, "owners", []),
     }
 
 # =========================
@@ -101,19 +105,59 @@ class ProjectSerializer(serializers.ModelSerializer):
     has_license  = serializers.ReadOnlyField()
     completion   = serializers.ReadOnlyField()
 
+    # الكود الداخلي: M + أرقام فردية فقط (يتم تطبيعه)
+    internal_code = serializers.CharField(required=False, allow_blank=True, max_length=40)
+
+    # اسم عرض مشتق من الملاك
+    display_name = serializers.SerializerMethodField()
+
     class Meta:
         model  = Project
         fields = [
             "id", "name",
+            "display_name",
             "project_type", "villa_category", "contract_type",
             "status", "has_siteplan", "has_license", "completion",
+            "internal_code",
             "created_at", "updated_at",
         ]
         extra_kwargs = {
+            "name": {"required": False, "allow_blank": True},
             "project_type": {"required": False},
             "villa_category": {"required": False},
             "contract_type": {"required": False},
         }
+
+    def validate_internal_code(self, value: str):
+        if value in (None, ""):
+            return value
+        digits = re.sub(r"[^0-9]", "", value or "")
+        digits = re.sub(r"[02468]", "", digits)  # إزالة الزوجي
+        normalized = ("M" + digits)[:40]
+        return normalized
+
+    def get_display_name(self, obj):
+        # نكوّن الاسم من أول مالك في الـ SitePlan، ولو أكثر من مالك نضيف "وشركاؤه"
+        try:
+            sp = obj.siteplan
+        except SitePlan.DoesNotExist:
+            sp = None
+
+        main_name = ""
+        owners_count = 0
+        if sp:
+            qs = sp.owners.order_by("id")
+            owners_count = qs.count()
+            for o in qs:
+                ar = (o.owner_name_ar or "").strip()
+                en = (o.owner_name_en or "").strip()
+                if ar or en:
+                    main_name = ar or en
+                    break
+
+        if main_name:
+            return f"{main_name} وشركاؤه" if owners_count > 1 else main_name
+        return f"مشروع #{obj.id}"
 
 # =========================
 # SitePlan + Owners
@@ -170,11 +214,6 @@ class SitePlanSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def _normalize_owner(o: dict):
-        """
-        يطبع الاسم:
-        - يدعم owner_name كـ alias.
-        - يملأ الاسم الناقص من الآخر.
-        """
         alias = (o.get("owner_name") or "").strip()
         ar = (o.get("owner_name_ar") or "").strip()
         en = (o.get("owner_name_en") or "").strip()
@@ -190,7 +229,6 @@ class SitePlanSerializer(serializers.ModelSerializer):
             c["owner_name_ar"] = ar
         if en:
             c["owner_name_en"] = en
-        # تنظيف share_percent الفارغ
         if "share_percent" in c and c["share_percent"] in ("", None):
             c["share_percent"] = None
         return c
@@ -200,33 +238,21 @@ class SitePlanSerializer(serializers.ModelSerializer):
         return bool((o.get("owner_name_ar") or "").strip() or (o.get("owner_name_en") or "").strip())
 
     def _extract_owners_from_request(self):
-        """
-        يدعم 3 أشكال للـ owners:
-        1) list[dict] JSON عادي
-        2) نص JSON داخل multipart: owners="[...]"
-        3) مفاتيح مسطحة: owners[0][field]=... (اللي بيعملها الـ FormData)
-        بالإضافة: يقبل owner_name كـ alias ويحوّله إلى AR/EN، ويملأ الاسم الناقص من الآخر.
-        """
         req = self.context.get("request")
         if not req:
             return None
 
         data = req.data
 
-        # (1) وصلت كقائمة فعلًا
         if isinstance(data.get("owners"), list):
             raw = data.get("owners")
-
-        # (2) owners كسلسلة JSON
         elif isinstance(data.get("owners"), str):
             try:
                 parsed = json.loads(data.get("owners"))
                 raw = parsed if isinstance(parsed, list) else []
             except Exception:
                 raw = []
-
         else:
-            # (3) جمع المفاتيح المسطّحة owners[0][field]
             buckets = {}
             for k, v in data.items():
                 m = self._owners_key_re.match(str(k))
@@ -245,18 +271,11 @@ class SitePlanSerializer(serializers.ModelSerializer):
             if not isinstance(o, dict):
                 continue
             c = self._normalize_owner(o)
-            if self._has_name(c):          # ← تجاهل الصفوف الفارغة
+            if self._has_name(c):
                 cleaned.append(c)
         return cleaned
 
-    # ----- validation (متسامحة لا توقف الحفظ) -----
     def validate(self, attrs):
-        """
-        تنظيف متسامح:
-        - لو الملاك جايين داخل attrs (JSON) نطبّع ونفلتر الفارغين.
-        - لو multipart هنقرأهم في create/update، فلا نرمي أخطاء هنا.
-        - لا نرمي ValidationError علشان السيستم ما يعطّلش بسبب سطر فاضي.
-        """
         owners_in_attrs = attrs.get("owners", None)
         if isinstance(owners_in_attrs, list):
             normalized = []
@@ -267,18 +286,34 @@ class SitePlanSerializer(serializers.ModelSerializer):
             attrs["owners"] = normalized
         return attrs
 
-    # ----- CRUD -----
+    # ==== NEW: تحديث اسم المشروع بناءً على الملاك ====
+    def _update_project_name_from_owners(self, siteplan: SitePlan):
+        qs = siteplan.owners.order_by("id")
+        owners_count = qs.count()
+        main = ""
+        for o in qs:
+            ar = (o.owner_name_ar or "").strip()
+            en = (o.owner_name_en or "").strip()
+            if ar or en:
+                main = ar or en
+                break
+        if main:
+            siteplan.project.name = f"{main} وشركاؤه" if owners_count > 1 else main
+            siteplan.project.save(update_fields=["name"])
+
     def create(self, validated_data):
         owners_data = validated_data.pop("owners", None)
         if owners_data is None:
             owners_data = self._extract_owners_from_request() or []
 
-        # فلترة الملاك الفارغين
         owners_data = [od for od in owners_data if self._has_name(od)]
 
         siteplan = SitePlan.objects.create(**validated_data)
         for od in owners_data:
             SitePlanOwner.objects.create(siteplan=siteplan, **od)
+
+        # ←← تحديث اسم المشروع بعد إنشاء الملاك
+        self._update_project_name_from_owners(siteplan)
         return siteplan
 
     def update(self, instance, validated_data):
@@ -286,18 +321,18 @@ class SitePlanSerializer(serializers.ModelSerializer):
         if owners_data is None:
             owners_data = self._extract_owners_from_request()
 
-        # تحديث بقية الحقول
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
-        # لو owners مبعوتين صراحة (حتى لو فاضي → امسح وأنشئ بعد الفلترة)
         if owners_data is not None:
             owners_data = [od for od in owners_data if self._has_name(od)]
             instance.owners.all().delete()
             for od in owners_data:
                 SitePlanOwner.objects.create(siteplan=instance, **od)
 
+        # ←← تحديث اسم المشروع بعد تعديل الملاك
+        self._update_project_name_from_owners(instance)
         return instance
 
 # =========================
@@ -308,18 +343,35 @@ class BuildingLicenseSerializer(serializers.ModelSerializer):
     siteplan_snapshot     = serializers.JSONField(read_only=True)
     owners_names = serializers.SerializerMethodField()
 
+    # حقول الرخصة/المطور + owners كـ JSON
+    owners = serializers.JSONField(required=False)  # يقبل list أو string JSON
+    project_name = serializers.CharField(required=False, allow_blank=True)          # (المطور)
+    license_project_no = serializers.CharField(required=False, allow_blank=True)    # (الرخصة)
+    license_project_name = serializers.CharField(required=False, allow_blank=True)  # (الرخصة)
+
     class Meta:
         model  = BuildingLicense
         fields = [
             "id", "project",
-            "license_type", "project_no", "license_no",
+            "license_type",
+            # (المطور)
+            "project_no", "project_name",
+            # (الرخصة)
+            "license_project_no", "license_project_name",
+            # بيانات الرخصة
+            "license_no",
             "issue_date", "last_issue_date", "expiry_date",
             "technical_decision_ref", "technical_decision_date", "license_notes",
             "building_license_file",
+            # الأرض
             "city", "zone", "sector", "plot_no", "plot_address",
             "plot_area_sqm", "land_use", "land_use_sub", "land_plan_no",
+            # الأطراف
             "consultant_name", "consultant_license_no",
             "contractor_name", "contractor_license_no",
+            # ملاك داخل الرخصة
+            "owners",
+            # سنابشوت وملحقات
             "siteplan_snapshot", "owners_names",
             "created_at", "updated_at",
         ]
@@ -335,6 +387,19 @@ class BuildingLicenseSerializer(serializers.ModelSerializer):
             if ar or en:
                 result.append({"ar": ar, "en": en})
         return result
+
+    def to_internal_value(self, data):
+        """دعم owners كسلسلة JSON في multipart: owners='[{"owner_name_ar":"..."}, ...]'"""
+        ret = super().to_internal_value(data)
+        owners_raw = self.initial_data.get("owners")
+        if isinstance(owners_raw, str):
+            try:
+                parsed = json.loads(owners_raw)
+                if isinstance(parsed, list):
+                    ret["owners"] = parsed
+            except Exception:
+                pass
+        return ret
 
     def validate(self, attrs):
         issue = attrs.get("issue_date") or getattr(self.instance, "issue_date", None)
@@ -367,7 +432,7 @@ class ContractSerializer(serializers.ModelSerializer):
     license_snapshot = serializers.JSONField(read_only=True)
 
     class Meta:
-        model  = Contract
+        model = Contract
         fields = [
             "id", "project",
             # تصنيف ونوع
@@ -389,6 +454,7 @@ class ContractSerializer(serializers.ModelSerializer):
             "license_snapshot",
             "created_at", "updated_at",
         ]
+        # ✅ كانت خارج Meta وبالتالي الـ serializer كان يطلب project
         read_only_fields = ["project", "license_snapshot", "created_at", "updated_at"]
 
     def validate(self, attrs):

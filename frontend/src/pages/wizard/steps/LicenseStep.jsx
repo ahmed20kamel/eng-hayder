@@ -1,4 +1,3 @@
-// src/pages/wizard/steps/LicenseStep.jsx
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../../../services/api";
@@ -39,12 +38,12 @@ function formatServerErrors(data) {
     license_type: "نوع الرخصة",
     project_no: "رقم المشروع (المطور)",
     license_project_no: "رقم المشروع (الرخصة)",
+    license_project_name: "اسم المشروع (الرخصة)",
     license_no: "رقم الرخصة",
     issue_date: "تاريخ إصدار الرخصة",
     last_issue_date: "تاريخ آخر إصدار",
     license_file_ref: "طلب المشروع",
     project_name: "اسم المشروع (المطور)",
-    license_project_name: "اسم المشروع (الرخصة)",
     license_stage_or_worktype: "بيان الأعمال",
     city: "البلدية",
     license_status: "حالة الطلب",
@@ -241,7 +240,7 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
           if (!prev.plot_address)  next.plot_address = s.plot_address || "";
           if (!prev.plot_area_sqm) next.plot_area_sqm = s.plot_area_sqm || "";
 
-          // حقول المطور (Read-only) لو متاحة
+          // حقول المطور (Read-only) لو متاحة — نسيبها فاضية لو مفيش بيانات
           if (!prev.project_no)    next.project_no = s.project_no || "";
           if (!prev.project_name)  next.project_name = s.project_name || "";
 
@@ -395,15 +394,11 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
           <ViewRow label={t("issue_date")} value={form.issue_date} icon={FaCalendarAlt} />
           <ViewRow label={t("last_issue_date")} value={form.last_issue_date} icon={FaCalendarAlt} />
 
-          {/* (المطور) نخفي لو فاضيين */}
-          {form.project_no ? (
-            <ViewRow label={devProjectNoLabel} value={form.project_no} icon={FaHashtag} />
-          ) : null}
-          {form.project_name ? (
-            <ViewRow label={devProjectNameLabel} value={form.project_name} icon={FaInfoCircle} />
-          ) : null}
+          {/* (المطور) — تظهر دائمًا حتى لو فاضية */}
+          <ViewRow label={devProjectNoLabel} value={form.project_no} icon={FaHashtag} />
+          <ViewRow label={devProjectNameLabel} value={form.project_name} icon={FaInfoCircle} />
 
-          {/* (الرخصة) دائمًا موجودين */}
+          {/* (الرخصة) — تظهر دائمًا */}
           <ViewRow label={licProjectNoLabel} value={form.license_project_no} icon={FaHashtag} />
           <ViewRow label={licProjectNameLabel} value={form.license_project_name} icon={FaInfoCircle} />
 
@@ -437,36 +432,35 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
             <input className="input" type="date" value={form.last_issue_date || ""} onChange={(e) => setF("last_issue_date", e.target.value)} />
           </Field>
 
-          {/* (المطور) Read-only + اخفاء لو فاضي */}
-          {form.project_no ? (
-            <Field label={devProjectNoLabel} icon={FaHashtag}>
-              <input
-                className={`input ${isRO("project_no") ? "readonly" : ""}`}
-                value={form.project_no}
-                readOnly={isRO("project_no")}
-                title={isRO("project_no") ? readonlyHint : ""}
-                onChange={isRO("project_no") ? undefined : (e) => setF("project_no", e.target.value)}
-              />
-            </Field>
-          ) : null}
+          {/* (المطور) Read-only — تظهر دائمًا حتى لو فاضية */}
+          <Field label={devProjectNoLabel} icon={FaHashtag}>
+            <input
+              className={`input ${isRO("project_no") ? "readonly" : ""}`}
+              value={form.project_no}
+              readOnly={isRO("project_no")}
+              placeholder="—"
+              title={isRO("project_no") ? readonlyHint : ""}
+              onChange={isRO("project_no") ? undefined : (e) => setF("project_no", e.target.value)}
+            />
+          </Field>
 
-          {form.project_name ? (
-            <Field label={devProjectNameLabel} icon={FaInfoCircle}>
-              <input
-                className={`input ${isRO("project_name") ? "readonly" : ""}`}
-                value={form.project_name}
-                readOnly={isRO("project_name")}
-                title={isRO("project_name") ? readonlyHint : ""}
-                onChange={isRO("project_name") ? undefined : (e) => setF("project_name", e.target.value)}
-              />
-            </Field>
-          ) : null}
+          <Field label={devProjectNameLabel} icon={FaInfoCircle}>
+            <input
+              className={`input ${isRO("project_name") ? "readonly" : ""}`}
+              value={form.project_name}
+              readOnly={isRO("project_name")}
+              placeholder="—"
+              title={isRO("project_name") ? readonlyHint : ""}
+              onChange={isRO("project_name") ? undefined : (e) => setF("project_name", e.target.value)}
+            />
+          </Field>
 
-          {/* (الرخصة) Editable دائمًا */}
+          {/* (الرخصة) Editable — تظهر دائمًا */}
           <Field label={licProjectNoLabel} icon={FaHashtag}>
             <input
               className="input"
               value={form.license_project_no}
+              placeholder="—"
               onChange={(e) => setF("license_project_no", e.target.value)}
             />
           </Field>
@@ -475,6 +469,7 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
             <input
               className="input"
               value={form.license_project_name}
+              placeholder="—"
               onChange={(e) => setF("license_project_name", e.target.value)}
             />
           </Field>

@@ -1,6 +1,5 @@
 from django.db import models
-from django.core.validators import MinValueValidator, MaxValueValidator
-
+from django.core.validators import MinValueValidator, MaxValueValidator, RegexValidator
 
 # ====== أساس timestamps ======
 class TimeStampedModel(models.Model):
@@ -29,7 +28,8 @@ class Project(TimeStampedModel):
         ('continue', 'Continuation Contract'),
     ]
 
-    name = models.CharField(max_length=200)
+    # ↓↓↓ السماح بإنشاء مشروع بدون اسم
+    name = models.CharField(max_length=200, blank=True, default="")
     project_type = models.CharField(max_length=40, choices=PROJECT_TYPE_CHOICES, blank=True)
     villa_category = models.CharField(max_length=40, choices=VILLA_CATEGORY_CHOICES, blank=True)
     contract_type = models.CharField(max_length=40, choices=CONTRACT_TYPE_CHOICES, blank=True)
@@ -44,8 +44,20 @@ class Project(TimeStampedModel):
         default='draft',
     )
 
+    # ✨ جديد: الكود الداخلي للمشروع — يبدأ بـ M ثم أرقام فردية فقط
+    internal_code = models.CharField(
+        max_length=40,
+        blank=True,
+        db_index=True,
+        validators=[RegexValidator(
+            regex=r"^M[13579]*$",
+            message="Internal code must start with 'M' and contain odd digits only (1,3,5,7,9)."
+        )],
+        help_text="Starts with M, followed by odd digits only (1,3,5,7,9).",
+    )
+
     def __str__(self):
-        return self.name
+        return self.name or f"Project #{self.id}"
 
 
 # ====== مخطط الأرض ======
@@ -81,7 +93,7 @@ class SitePlan(TimeStampedModel):
     application_file = models.FileField(upload_to="siteplans/applications/", null=True, blank=True)
 
     def __str__(self):
-        return f"SitePlan #{self.id} for {self.project.name}"
+        return f"SitePlan #{self.id} for {self.project.name or self.project_id}"
 
 
 class SitePlanOwner(TimeStampedModel):
@@ -111,7 +123,15 @@ class BuildingLicense(TimeStampedModel):
 
     # General license data
     license_type = models.CharField(max_length=120, blank=True)
+
+    # (المطور) سنابشوت من الـ SitePlan
     project_no = models.CharField(max_length=120, blank=True)
+    project_name = models.CharField(max_length=200, blank=True)  # ✨ جديد
+
+    # (الرخصة) الحقلان الجداد
+    license_project_no = models.CharField(max_length=120, blank=True)     # ✨ جديد
+    license_project_name = models.CharField(max_length=200, blank=True)   # ✨ جديد
+
     license_no = models.CharField(max_length=120, blank=True)
     issue_date = models.DateField(null=True, blank=True)
     last_issue_date = models.DateField(null=True, blank=True)
@@ -137,6 +157,9 @@ class BuildingLicense(TimeStampedModel):
     consultant_license_no = models.CharField(max_length=120, blank=True)
     contractor_name = models.CharField(max_length=200, blank=True)
     contractor_license_no = models.CharField(max_length=120, blank=True)
+
+    # Owners snapshot داخل الرخصة
+    owners = models.JSONField(default=list, blank=True)  # ✨ جديد
 
     # Read-only snapshot من SitePlan
     siteplan_snapshot = models.JSONField(default=dict, editable=False)
@@ -179,4 +202,4 @@ class Contract(TimeStampedModel):
     license_snapshot = models.JSONField(default=dict, editable=False)
 
     def __str__(self):
-        return f"Contract for {self.project.name}"
+        return f"Contract for {self.project.name or self.project_id}"

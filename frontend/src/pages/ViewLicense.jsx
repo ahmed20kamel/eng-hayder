@@ -1,4 +1,3 @@
-// src/pages/ViewLicense.jsx
 import { Link, useParams } from "react-router-dom";
 import LicenseStep from "./wizard/steps/LicenseStep";
 

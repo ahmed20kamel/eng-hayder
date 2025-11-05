@@ -1,4 +1,3 @@
-// src/pages/ProjectView.jsx
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../services/api";
@@ -70,13 +69,15 @@ export default function ProjectView() {
   const hasLicense  = !!license;
   const hasContract = !!contract;
 
+  const titleText = project?.display_name || project?.name || `مشروع #${projectId}`;
+
   return (
     <div className="container">
       <div className="card card--page">
         <div className="content">
           <div className="row row--space-between row--align-center">
             <h2 className="page-title">
-              {project?.name ? `📦 ${project.name}` : `📦 مشروع #${projectId}`}
+              {`📦 ${titleText}`}
             </h2>
             <div className="row row--gap-8">
               <Link className="btn secondary" to="/">الرئيسية ←</Link>

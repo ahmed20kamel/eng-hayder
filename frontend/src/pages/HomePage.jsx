@@ -1,4 +1,3 @@
-// src/pages/HomePage.jsx
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -14,19 +13,17 @@ export default function HomePage() {
     try {
       setLoading(true);
 
-      const payload = {
-        name: t("homepage_default_project_name"),
-        type: "residential",
-        status: "draft",
-      };
-
+      // بدون اسم — بس حالة مبدئية إن حبيت
+      const payload = { status: "draft" };
       const res = await api.post("projects/", payload);
       const id = res?.data?.id;
+
       if (id) {
         navigate(`/projects/${id}/wizard`);
         return;
       }
 
+      // فول باك بسيط
       const list = await api.get("projects/");
       const latestId =
         Array.isArray(list.data) && list.data.length ? list.data[0].id : null;

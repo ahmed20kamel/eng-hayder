@@ -1,4 +1,3 @@
-// src/pages/ProjectsPage.jsx
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../services/api";
@@ -7,10 +6,15 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // حذف احترافي
+  // حذف فردي
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [targetProject, setTargetProject] = useState(null); // {id, name}
   const [deletingId, setDeletingId] = useState(null);
+
+  // ✅ تحديد متعدد + حذف جماعي
+  const [selectedIds, setSelectedIds] = useState(new Set()); // Set<number>
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // Toast بسيط
   const [toast, setToast] = useState(null); // {type: 'success'|'error', msg}
@@ -38,9 +42,28 @@ export default function ProjectsPage() {
     toastTimer.current = setTimeout(() => setToast(null), 2500);
   };
 
-  // فتح الـ Dialog
+  // ====== تحديد متعدد ======
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const isAllSelected = projects.length > 0 && projects.every(p => selectedIds.has(p.id));
+  const toggleSelectAll = () => {
+    setSelectedIds(prev => {
+      if (isAllSelected) return new Set(); // إلغاء الكل
+      return new Set(projects.map(p => p.id)); // تحديد الكل المعروض
+    });
+  };
+
+  // فتح الـ Dialog الفردي
   const askDelete = (p) => {
-    setTargetProject({ id: p.id, name: p?.name || `مشروع #${p?.id}` });
+    const title = p?.display_name || p?.name || `مشروع #${p?.id}`;
+    setTargetProject({ id: p.id, name: title });
     setConfirmOpen(true);
   };
 
@@ -51,6 +74,11 @@ export default function ProjectsPage() {
       setDeletingId(id);
       await api.delete(`projects/${id}/`);
       setProjects((prev) => prev.filter((p) => p.id !== id));
+      setSelectedIds((prev) => {
+        const n = new Set(prev);
+        n.delete(id);
+        return n;
+      });
       showToast("success", "تم حذف المشروع بنجاح.");
       setConfirmOpen(false);
       setTargetProject(null);
@@ -59,6 +87,42 @@ export default function ProjectsPage() {
       showToast("error", "حدث خطأ أثناء الحذف.");
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  // ====== حذف جماعي ======
+  const askBulkDelete = () => {
+    if (selectedIds.size === 0) return;
+    setBulkConfirmOpen(true);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkDeleting(true);
+    const ids = Array.from(selectedIds);
+    let ok = 0, fail = 0;
+
+    for (const id of ids) {
+      try {
+        await api.delete(`projects/${id}/`);
+        ok += 1;
+      } catch (e) {
+        console.error("Bulk delete failed for id", id, e);
+        fail += 1;
+      }
+    }
+
+    setProjects(prev => prev.filter(p => !selectedIds.has(p.id)));
+    setSelectedIds(new Set());
+    setBulkDeleting(false);
+    setBulkConfirmOpen(false);
+
+    if (fail === 0) {
+      showToast("success", `تم حذف ${ok} مشروعًا بنجاح.`);
+    } else if (ok === 0) {
+      showToast("error", "تعذّر حذف المشاريع المحددة.");
+    } else {
+      showToast("error", `تم حذف ${ok} وفشل حذف ${fail}.`);
     }
   };
 
@@ -74,6 +138,8 @@ export default function ProjectsPage() {
     );
   }
 
+  const selectedCount = selectedIds.size;
+
   return (
     <div className="prj-container" dir="rtl">
       <div className="prj-card prj-page">
@@ -85,6 +151,23 @@ export default function ProjectsPage() {
           <p className="prj-subtitle">اختر مشروعًا للاطّلاع على التفاصيل أو تعديل البيانات.</p>
         </div>
 
+        {/* شريط إجراءات عند وجود تحديد */}
+        {selectedCount > 0 && (
+          <div className="prj-bulkbar">
+            <div className="prj-bulkbar__info">
+              محدد: <strong>{selectedCount}</strong>
+            </div>
+            <div className="prj-bulkbar__actions">
+              <button className="prj-btn prj-btn--danger" onClick={askBulkDelete}>
+                حذف المحدد
+              </button>
+              <button className="prj-btn prj-btn--ghost" onClick={() => setSelectedIds(new Set())}>
+                إلغاء التحديد
+              </button>
+            </div>
+          </div>
+        )}
+
         {projects.length === 0 ? (
           <div className="prj-alert">
             <span className="prj-alert__title">🚧 لا توجد مشاريع بعد.</span>
@@ -94,6 +177,14 @@ export default function ProjectsPage() {
             <table className="prj-table">
               <thead>
                 <tr>
+                  <th style={{width: 36, textAlign: "center"}}>
+                    <input
+                      type="checkbox"
+                      aria-label="تحديد الكل"
+                      checked={isAllSelected}
+                      onChange={toggleSelectAll}
+                    />
+                  </th>
                   <th>#</th>
                   <th>اسم المشروع</th>
                   <th>الكود الداخلي</th>
@@ -109,14 +200,26 @@ export default function ProjectsPage() {
                   const hasLicense  = !!p?.has_license;
                   const hasContract = !!p?.contract_type;
                   const active      = hasSiteplan || hasLicense || hasContract;
+                  const checked     = selectedIds.has(p.id);
+
+                  const title = p?.display_name || p?.name || `مشروع #${p?.id ?? i+1}`;
 
                   return (
                     <tr key={p?.id ?? i} className={active ? "prj-row--active" : undefined}>
+                      <td style={{ textAlign: "center" }}>
+                        <input
+                          type="checkbox"
+                          aria-label={`تحديد ${title}`}
+                          checked={checked}
+                          onChange={() => toggleSelect(p.id)}
+                        />
+                      </td>
+
                       <td className="prj-muted">{i + 1}</td>
 
                       <td>
                         <div className="prj-cell__main">
-                          <div className="prj-cell__title">{p?.name || `مشروع #${p?.id ?? i+1}`}</div>
+                          <div className="prj-cell__title">{title}</div>
                           <div className="prj-cell__sub prj-muted">
                             {p?.city ? `المدينة: ${p.city}` : "—"}
                           </div>
@@ -155,7 +258,7 @@ export default function ProjectsPage() {
 
               <tfoot>
                 <tr>
-                  <td colSpan={7} className="prj-foot prj-muted">
+                  <td colSpan={8} className="prj-foot prj-muted">
                     إجمالي المشاريع: {projects.length}
                   </td>
                 </tr>
@@ -172,7 +275,7 @@ export default function ProjectsPage() {
         </div>
       )}
 
-      {/* Confirm Dialog */}
+      {/* Confirm Dialog — حذف فردي */}
       {confirmOpen && (
         <ConfirmDialog
           title="تأكيد الحذف"
@@ -190,6 +293,26 @@ export default function ProjectsPage() {
           onConfirm={handleDelete}
           danger
           busy={!!deletingId}
+        />
+      )}
+
+      {/* Confirm Dialog — حذف جماعي */}
+      {bulkConfirmOpen && (
+        <ConfirmDialog
+          title="حذف جماعي"
+          desc={
+            <>
+              سيتم حذف <strong>{selectedCount}</strong> مشروع/مشاريع نهائيًا.
+              <br />
+              هل تريد المتابعة؟
+            </>
+          }
+          confirmLabel={bulkDeleting ? "جارٍ الحذف..." : "حذف المحدد"}
+          cancelLabel="إلغاء"
+          onClose={() => !bulkDeleting && setBulkConfirmOpen(false)}
+          onConfirm={handleBulkDelete}
+          danger
+          busy={bulkDeleting}
         />
       )}
     </div>
