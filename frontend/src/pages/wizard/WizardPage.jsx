@@ -80,7 +80,8 @@ export default function WizardPage() {
     return allowSitePlanFlow
       ? [
           ...base,
-          { id: "siteplan", title: labels.siteplan, icon: FaMap, Component: SitePlanStep },
+         { id: "siteplan", title: labels.siteplan, Component: SitePlanStep },
+
           { id: "license", title: labels.license, icon: FaIdCard, Component: LicenseStep },
           { id: "contract", title: labels.contract, icon: FaFileSignature, Component: ContractStep },
         ]
@@ -88,7 +89,7 @@ export default function WizardPage() {
   }, [allowSitePlanFlow, labels.setup, labels.siteplan, labels.license, labels.contract]);
 
   const isFirst = index === 0;
-  const isLast = index === STEPS.length - 1;
+  const isLast = index === STEPS.length - 1;  
   const goPrev = () => !isFirst && setIndex((i) => i - 1);
   const goNext = () => !isLast && setIndex((i) => i + 1);
 
@@ -127,7 +128,7 @@ export default function WizardPage() {
                 disabled={locked}
               >
                 <span className="step-dot">{i + 1}</span>
-                <Icon className="mie-8" />
+{Icon && <Icon className="mie-8" />}
                 {title}
               </button>
             );

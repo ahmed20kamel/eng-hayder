@@ -171,16 +171,39 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
     email: "",
   };
 
-  const NATIONALITIES = useMemo(
-    () =>
-      [
-        "Emirati","Saudi","Egyptian","Jordanian","Syrian","Lebanese","Palestinian","Sudanese",
-        "Indian","Pakistani","Bangladeshi","Filipino","British","American","French","German",
-        "Chinese","Turkish","Moroccan","Tunisian","Algerian","Iraqi","Yemeni","Kuwaiti","Qatari","Bahraini","Omani",
-      ].map((n) => [n, n]),
-    []
-  );
-
+const NATIONALITIES = useMemo(
+  () => [
+    { value: "Emirati", label: { en: "Emirati", ar: "إماراتي" } },
+    { value: "Saudi", label: { en: "Saudi", ar: "سعودي" } },
+    { value: "Egyptian", label: { en: "Egyptian", ar: "مصري" } },
+    { value: "Jordanian", label: { en: "Jordanian", ar: "أردني" } },
+    { value: "Syrian", label: { en: "Syrian", ar: "سوري" } },
+    { value: "Lebanese", label: { en: "Lebanese", ar: "لبناني" } },
+    { value: "Palestinian", label: { en: "Palestinian", ar: "فلسطيني" } },
+    { value: "Sudanese", label: { en: "Sudanese", ar: "سوداني" } },
+    { value: "Indian", label: { en: "Indian", ar: "هندي" } },
+    { value: "Pakistani", label: { en: "Pakistani", ar: "باكستاني" } },
+    { value: "Bangladeshi", label: { en: "Bangladeshi", ar: "بنغالي" } },
+    { value: "Filipino", label: { en: "Filipino", ar: "فلبيني" } },
+    { value: "British", label: { en: "British", ar: "بريطاني" } },
+    { value: "American", label: { en: "American", ar: "أمريكي" } },
+    { value: "French", label: { en: "French", ar: "فرنسي" } },
+    { value: "German", label: { en: "German", ar: "ألماني" } },
+    { value: "Chinese", label: { en: "Chinese", ar: "صيني" } },
+    { value: "Turkish", label: { en: "Turkish", ar: "تركي" } },
+    { value: "Moroccan", label: { en: "Moroccan", ar: "مغربي" } },
+    { value: "Tunisian", label: { en: "Tunisian", ar: "تونسي" } },
+    { value: "Algerian", label: { en: "Algerian", ar: "جزائري" } },
+    { value: "Iraqi", label: { en: "Iraqi", ar: "عراقي" } },
+    { value: "Yemeni", label: { en: "Yemeni", ar: "يمني" } },
+    { value: "Kuwaiti", label: { en: "Kuwaiti", ar: "كويتي" } },
+    { value: "Qatari", label: { en: "Qatari", ar: "قطري" } },
+    { value: "Bahraini", label: { en: "Bahraini", ar: "بحريني" } },
+    { value: "Omani", label: { en: "Omani", ar: "عُماني" } },
+  ],
+  []
+);
+ 
   const SHARE_POSSESSION_OPTIONS = useMemo(
     () => ([
       { value: "purchase_100", label: isAR ? i18next.t("share_possession_purchase_100_ar") : i18next.t("share_possession_purchase_100_en") },
@@ -220,6 +243,43 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
     const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
     return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
   };
+function formatEmiratesId(digits) {
+  if (!digits) return "";
+
+  digits = digits.replace(/\D/g, "").slice(0, 15);
+
+  let part1 = digits.slice(0, 3);
+  let part2 = digits.slice(3, 7);
+  let part3 = digits.slice(7, 14);
+  let part4 = digits.slice(14, 15);
+
+  return [part1, part2, part3, part4].filter(Boolean).join("-");
+}
+
+function handleEmiratesIdInput(e, i) {
+  const input = e.target;
+  const raw = input.value.replace(/\D/g, "").slice(0, 15);
+
+  // الفورمات الجديد
+  let formatted = "";
+  if (raw.length > 0) formatted += raw.slice(0, 3);
+  if (raw.length > 3) formatted += "-" + raw.slice(3, 7);
+  if (raw.length > 7) formatted += "-" + raw.slice(7, 14);
+  if (raw.length > 14) formatted += "-" + raw.slice(14, 15);
+
+  // حساب موضع المؤشر
+  let cursor = input.selectionStart;
+  const diff = formatted.length - input.value.length;
+  cursor += diff;
+  if (cursor < 0) cursor = 0;
+
+  updateOwner(i, "id_number", formatted);
+
+  // تأخير بسيط للسماح للواجهة بالتحديث
+  setTimeout(() => {
+    input.setSelectionRange(cursor, cursor);
+  }, 0);
+}
 
   /* =================== تحويل المساحات =================== */
   const [lock, setLock] = useState(false);
@@ -284,30 +344,18 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
   }, [form.municipality]);
 
   /* =================== نسب الملاك =================== */
-  const recalcShares = (arr) => {
-    if (arr.length === 1) {
-      arr[0].share_percent = "100";
-      return arr;
-    }
-    const sumOthers = arr.slice(0, -1).reduce((s, o) => s + (parseFloat(o.share_percent) || 0), 0);
-    const rem = Math.max(0, 100 - sumOthers);
-    arr[arr.length - 1].share_percent = String(rem);
-    return arr;
-  };
+  const recalcShares = (arr) => arr; // تعطيل كامل لإعادة الحساب
 
-  const addOwner = () => setOwners((prev) => recalcShares([...prev, { ...emptyOwner, share_percent: "0" }]));
+  const addOwner = () =>
+    setOwners((prev) => [...prev, { ...emptyOwner, share_percent: "0" }]);
+
   const removeOwner = (i) =>
-    setOwners((prev) => recalcShares(prev.filter((_, idx) => idx !== i)));
+    setOwners((prev) => prev.filter((_, idx) => idx !== i));
+
   const updateOwner = (i, key, value) =>
     setOwners((prev) => {
       const x = [...prev];
       x[i] = { ...x[i], [key]: value };
-      if (key === "share_percent" && i !== x.length - 1) {
-        const capped = Math.max(0, Math.min(100, parseFloat(value) || 0));
-        x[i].share_percent = String(capped);
-        return recalcShares(x);
-      }
-      if (x.length === 1) x[0].share_percent = "100";
       return x;
     });
 
@@ -418,7 +466,7 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
 
   /* =================== واجهة المستخدم =================== */
   return (
-    <WizardShell icon={FaMap} title={`📐 ${t("step_siteplan")}`}>
+<WizardShell title={`📐 ${t("step_siteplan")}`}>
       {/* مودال الخطأ */}
       {errorMsg && (
         <div role="dialog" aria-modal="true" className="backdrop">
@@ -498,9 +546,6 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
             <input className="input" value={form.sector} onChange={(e) => setF("sector", e.target.value)} />
           </Field>
 
-          <Field label={t("road_name")}>
-            <input className="input" value={form.road_name} onChange={(e) => setF("road_name", e.target.value)} />
-          </Field>
 
           <Field label={t("plot_area_sqm")}>
             <input className="input" type="number" value={form.plot_area_sqm} onChange={(e) => onSqmChange(e.target.value)} />
@@ -514,18 +559,6 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
             <input className="input" value={form.land_no} onChange={(e) => setF("land_no", e.target.value)} />
           </Field>
 
-          <Field label={t("plot_address")}>
-            <input className="input" value={form.plot_address} onChange={(e) => setF("plot_address", e.target.value)} />
-          </Field>
-
-          <Field label={t("construction_status")}>
-            <input
-              className="input"
-              value={form.construction_status}
-              onChange={(e) => setF("construction_status", e.target.value)}
-              placeholder={t("not_constructed_example")}
-            />
-          </Field>
 
           <Field label={t("allocation_type")}>
             <select className="input" value={form.allocation_type} onChange={(e) => setF("allocation_type", e.target.value)}>
@@ -542,23 +575,6 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
             </select>
           </Field>
 
-          <Field label={t("base_district")}>
-            <input
-              className="input"
-              value={form.base_district}
-              onChange={(e) => setF("base_district", e.target.value)}
-              placeholder={t("base_district_ph")}
-            />
-          </Field>
-
-          <Field label={overlayLabel}>
-            <input
-              className="input"
-              value={form.overlay_district}
-              onChange={(e) => setF("overlay_district", e.target.value)}
-              placeholder={overlayPH}
-            />
-          </Field>
 
           <Field label={t("allocation_date")}>
             <input className="input" type="date" value={form.allocation_date || ""} onChange={(e) => setF("allocation_date", e.target.value)} />
@@ -611,7 +627,10 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
                 <Field label={t("email")}><div>{o.email || "-"}</div></Field>
 
                 <Field label={t("id_number")}><div>{o.id_number || "-"}</div></Field>
-                <Field label={t("issue_date")}><div>{o.id_issue_date || "-"}</div></Field>
+                {o.nationality !== "Emirati" && (
+  <Field label={t("issue_date")}><div>{o.id_issue_date || "-"}</div></Field>
+)}
+
                 <Field label={t("expiry_date")}><div>{o.id_expiry_date || "-"}</div></Field>
                 <Field label={t("right_hold_type")}><div>{o.right_hold_type || "-"}</div></Field>
                 <Field label={t("share_and_acquisition")}><div>{o.share_possession || "-"}</div></Field>
@@ -622,7 +641,8 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
       ) : (
         <>
           {owners.map((o, i) => (
-            <div key={i} className="owner-block">
+                <div key={i}
+ className="owner-block">
               {/* الأسماء + الجنسية */}
               <div className="form-grid cols-3">
                 <Field label={t("owner_name_ar")}>
@@ -634,7 +654,11 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
                 <Field label={t("nationality")}>
                   <RtlSelect
                     className="rtl-select"
-                    options={NATIONALITIES.map(([v, l]) => ({ value: v, label: l }))}
+                    options={NATIONALITIES.map(n => ({
+  value: n.value,
+  label: isAR ? n.label.ar : n.label.en
+}))
+}
                     value={o.nationality}
                     onChange={(v) => updateOwner(i, "nationality", v)}
                     placeholder={t("select_nationality")}
@@ -655,12 +679,29 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
 
               {/* الهوية */}
               <div className="form-grid cols-4 mt-8">
-                <Field label={t("id_number")}>
-                  <input className="input" value={o.id_number} onChange={(e) => updateOwner(i, "id_number", e.target.value)} />
-                </Field>
-                <Field label={t("issue_date")}>
-                  <input className="input" type="date" value={o.id_issue_date || ""} onChange={(e) => updateOwner(i, "id_issue_date", e.target.value)} />
-                </Field>
+              <Field label={t("id_number")}>
+                <input
+  className="input"
+  value={o.id_number}
+onChange={(e) => handleEmiratesIdInput(e, i)}
+
+  maxLength={18}
+  placeholder="784-XXXX-XXXXXXX-X"
+/>
+
+              </Field>
+
+{o.nationality !== "Emirati" && (
+  <Field label={t("issue_date")}>
+    <input
+      className="input"
+      type="date"
+      value={o.id_issue_date || ""}
+      onChange={(e) => updateOwner(i, "id_issue_date", e.target.value)}
+    />
+  </Field>
+)}
+
                 <Field label={t("expiry_date")}>
                   <input className="input" type="date" value={o.id_expiry_date || ""} onChange={(e) => updateOwner(i, "id_expiry_date", e.target.value)} />
                 </Field>
@@ -672,29 +713,29 @@ export default function SitePlanStep({ projectId, setup, onPrev, onNext }) {
               {/* الحقوق والحصص */}
               <div className="form-grid cols-4 mt-8">
                 <Field label={t("right_hold_type")}>
-                  <input className="input" value={o.right_hold_type} onChange={(e) => updateOwner(i, "right_hold_type", e.target.value)} />
-                </Field>
-
-                <Field label={t("share_and_acquisition")}>
-                  <RtlSelect
-                    className="rtl-select"
-                    options={SHARE_POSSESSION_OPTIONS}
-                    value={o.share_possession}
-                    onChange={(v) => updateOwner(i, "share_possession", v)}
-                  />
-                </Field>
-
-                <Field label={t("share_percent")}>
-                  <input
+                  <select
                     className="input"
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={o.share_percent}
-                    onChange={(e) => updateOwner(i, "share_percent", e.target.value)}
-                    disabled={owners.length === 1 || i === owners.length - 1}
-                  />
+                    value={o.right_hold_type}
+                    onChange={(e) => updateOwner(i, "right_hold_type", e.target.value)}
+                  >
+                    <option value="ملكية منحة">ملكية منحة</option>
+                    <option value="ملكية بيع وشراء">ملكية بيع وشراء</option>
+                  </select>
                 </Field>
+
+
+
+              <Field label={t("share_percent") || "نسبة التملك"}>
+                <input
+                  className="input"
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={o.share_percent}
+                  onChange={(e) => updateOwner(i, "share_percent", e.target.value)}
+                />
+              </Field>
+
 
                 <Field label={t("action")}>
                   <button

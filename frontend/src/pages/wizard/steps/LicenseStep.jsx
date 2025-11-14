@@ -101,6 +101,19 @@ function formatServerErrors(data) {
   walk(data);
   return lines.join("\n");
 }
+function formatProjectNumber(raw) {
+  if (!raw) return "";
+  let v = raw.replace(/[^0-9]/g, ""); // لو أرقام فقط
+  // صيغة 3-4-6 مثال: 455-1515-151515
+  let p1 = v.slice(0, 3);
+  let p2 = v.slice(3, 7);
+  let p3 = v.slice(7, 13);
+
+  let out = p1;
+  if (p2) out += "-" + p2;
+  if (p3) out += "-" + p3;
+  return out;
+}
 
 /* ==== حقول منقولة من SitePlan وتكون read-only (إذا عرض فقط) ==== */
 const RO_FIELDS = new Set([
@@ -132,6 +145,67 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
     ]),
     [isAR, t]
   );
+  /* ===========================
+   حفظ / قراءة بيانات الاستشاري والمقاول محلياً
+   =========================== */
+
+function loadSavedList(key) {
+  try {
+    return JSON.parse(localStorage.getItem(key)) || [];
+  } catch {
+    return [];
+  }
+}
+
+function saveToList(key, item) {
+  const list = loadSavedList(key);
+
+  // لو الاسم موجود بالفعل — لا تضيفه مرتين
+  if (!list.find(x => x.name === item.name)) {
+    list.push(item);
+    localStorage.setItem(key, JSON.stringify(list));
+  }
+
+  return list;
+}
+
+const [consultantsList, setConsultantsList] = useState([]);
+const [contractorsList, setContractorsList] = useState([]);
+const [showConsultantDropdown, setShowConsultantDropdown] = useState(false);
+const [showContractorDropdown, setShowContractorDropdown] = useState(false);
+const [selectedConsultant, setSelectedConsultant] = useState(null);
+const [consultantQuery, setConsultantQuery] = useState("");
+const [showConsultantSuggestions, setShowConsultantSuggestions] = useState(false);
+const [showContractorSuggestions, setShowContractorSuggestions] = useState(false);
+
+useEffect(() => {
+  setConsultantsList(loadSavedList("consultants"));
+  setContractorsList(loadSavedList("contractors"));
+}, []);
+
+/* ==== تنسيق رقم المشروع تلقائياً ==== */
+function formatProjectNumber(raw) {
+  if (!raw) return "";
+  // إزالة أي أحرف غير مسموحة
+  let v = raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+  // تقسيمه على شكل B1N-2024-014159
+  let part1 = v.slice(0, 3);
+  let part2 = v.slice(3, 7);
+  let part3 = v.slice(7, 13);
+
+  let formatted = part1;
+  if (part2) formatted += "-" + part2;
+  if (part3) formatted += "-" + part3;
+
+  return formatted;
+}
+
+/* ==== بناء رقم الرخصة تلقائياً من رقم المشروع ==== */
+function buildPermitNumber(projectNo) {
+  if (!projectNo) return "";
+  return projectNo + "-P01";
+}
 
   /* ======= الحالة ======= */
   const [form, setForm] = useState({
@@ -145,7 +219,6 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
 
     license_no: "",
     issue_date: "",
-    last_issue_date: "",
     license_file_ref: "",
     license_stage_or_worktype: "",
     city: "",
@@ -240,10 +313,6 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
           if (!prev.plot_address)  next.plot_address = s.plot_address || "";
           if (!prev.plot_area_sqm) next.plot_area_sqm = s.plot_area_sqm || "";
 
-          // حقول المطور (Read-only) لو متاحة — نسيبها فاضية لو مفيش بيانات
-          if (!prev.project_no)    next.project_no = s.project_no || "";
-          if (!prev.project_name)  next.project_name = s.project_name || "";
-
           // استخدمات الأرض
           if (!prev.land_use)      next.land_use = toLocalizedUse(landUseRaw, i18n.language);
           if (!prev.land_use_sub)  next.land_use_sub = toLocalizedUse(landUseSubRaw, i18n.language);
@@ -321,30 +390,57 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
     }
     return fd;
   };
+// حفظ الاستشاري في القائمة
+// حفظ الاستشاري
 
-  const saveAndNext = async () => {
-    if (!projectId) {
-      setErrorMsg(t("open_specific_project_to_save"));
-      return;
+
+const saveAndNext = async () => {
+  if (!projectId) {
+    setErrorMsg(t("open_specific_project_to_save"));
+    return;
+  }
+
+  try {
+    // حفظ الاستشاري في LocalStorage
+    if (form.consultant_name && form.consultant_license_no) {
+      const updated = saveToList("consultants", {
+        name: form.consultant_name,
+        license: form.consultant_license_no
+      });
+      setConsultantsList(updated);
     }
-    try {
-      const payload = buildPayload();
-      if (existingId) {
-        await api.patch(`projects/${projectId}/license/${existingId}/`, payload);
-      } else {
-        const { data: created } = await api.post(`projects/${projectId}/license/`, payload);
-        if (created?.id) setExistingId(created.id);
-      }
-      setErrorMsg("");
-      setIsView(true); // ← التحويل للوضع القرائي بعد الحفظ
-      if (onNext) onNext();
-    } catch (err) {
-      const serverData = err?.response?.data;
-      const formatted = formatServerErrors(serverData);
-      const fallback = err?.message || (serverData ? JSON.stringify(serverData, null, 2) : t("save_failed"));
-      setErrorMsg(formatted || fallback);
+
+    // حفظ المقاول في LocalStorage
+    if (form.contractor_name && form.contractor_license_no) {
+      const updated = saveToList("contractors", {
+        name: form.contractor_name,
+        license: form.contractor_license_no
+      });
+      setContractorsList(updated);
     }
-  };
+
+    const payload = buildPayload();
+
+    if (existingId) {
+      await api.patch(`projects/${projectId}/license/${existingId}/`, payload);
+    } else {
+      const { data: created } = await api.post(`projects/${projectId}/license/`, payload);
+      if (created?.id) setExistingId(created.id);
+    }
+
+    setErrorMsg("");
+    setIsView(true);
+
+    if (onNext) onNext();
+
+  } catch (err) {
+    const serverData = err?.response?.data;
+    const formatted = formatServerErrors(serverData);
+    const fallback = err?.message || (serverData ? JSON.stringify(serverData, null, 2) : t("save_failed"));
+    setErrorMsg(formatted || fallback);
+  }
+};
+
 
   /* ====== واجهة العرض (View) لمقاطع مختلفة ====== */
   const ViewRow = ({ label, value, icon: Icon }) => (
@@ -391,16 +487,11 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
         <div className="form-grid cols-3">
           <ViewRow label={t("license_type")} value={LICENSE_TYPES.find(x => x.value === form.license_type)?.label || form.license_type} icon={FaTools} />
           <ViewRow label={t("license_no")} value={form.license_no} icon={FaHashtag} />
-          <ViewRow label={t("issue_date")} value={form.issue_date} icon={FaCalendarAlt} />
-          <ViewRow label={t("last_issue_date")} value={form.last_issue_date} icon={FaCalendarAlt} />
+<ViewRow label={t("issue_date_first")} value={form.issue_date} icon={FaCalendarAlt} />
 
-          {/* (المطور) — تظهر دائمًا حتى لو فاضية */}
-          <ViewRow label={devProjectNoLabel} value={form.project_no} icon={FaHashtag} />
-          <ViewRow label={devProjectNameLabel} value={form.project_name} icon={FaInfoCircle} />
 
           {/* (الرخصة) — تظهر دائمًا */}
           <ViewRow label={licProjectNoLabel} value={form.license_project_no} icon={FaHashtag} />
-          <ViewRow label={licProjectNameLabel} value={form.license_project_name} icon={FaInfoCircle} />
 
           <ViewRow label={t("attach_building_license")} value={form.building_license_file ? t("file_attached") : t("no_file")} icon={FaPaperclip} />
         </div>
@@ -419,60 +510,44 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
               <InfoTip align="start" text={t("note_take_data_as_in_license")} />
             </div>
           </Field>
+<Field label={t("license_no")} icon={FaHashtag}>
+  <input
+    className="input"
+    value={form.license_no}
+    onChange={(e) => setF("license_no", e.target.value)}
+  />
+</Field>
 
-          <Field label={t("license_no")} icon={FaHashtag}>
-            <input className="input" value={form.license_no} onChange={(e) => setF("license_no", e.target.value)} />
-          </Field>
 
-          <Field label={t("issue_date")} icon={FaCalendarAlt}>
-            <input className="input" type="date" value={form.issue_date || ""} onChange={(e) => setF("issue_date", e.target.value)} />
-          </Field>
+<Field label="تاريخ أول إصدار" icon={FaCalendarAlt}>
+  <input
+    className="input"
+    type="date"
+    value={form.issue_date || ""}
+    onChange={(e) => setF("issue_date", e.target.value)}
+  />
+</Field>
 
-          <Field label={t("last_issue_date")} icon={FaCalendarAlt}>
-            <input className="input" type="date" value={form.last_issue_date || ""} onChange={(e) => setF("last_issue_date", e.target.value)} />
-          </Field>
 
-          {/* (المطور) Read-only — تظهر دائمًا حتى لو فاضية */}
-          <Field label={devProjectNoLabel} icon={FaHashtag}>
-            <input
-              className={`input ${isRO("project_no") ? "readonly" : ""}`}
-              value={form.project_no}
-              readOnly={isRO("project_no")}
-              placeholder="—"
-              title={isRO("project_no") ? readonlyHint : ""}
-              onChange={isRO("project_no") ? undefined : (e) => setF("project_no", e.target.value)}
-            />
-          </Field>
+<Field label={licProjectNoLabel} icon={FaHashtag}>
+  <input
+    className="input"
+    value={form.license_project_no}
+    onChange={(e) => {
+      const formatted = formatProjectNumber(e.target.value);
 
-          <Field label={devProjectNameLabel} icon={FaInfoCircle}>
-            <input
-              className={`input ${isRO("project_name") ? "readonly" : ""}`}
-              value={form.project_name}
-              readOnly={isRO("project_name")}
-              placeholder="—"
-              title={isRO("project_name") ? readonlyHint : ""}
-              onChange={isRO("project_name") ? undefined : (e) => setF("project_name", e.target.value)}
-            />
-          </Field>
+      // تحديث رقم المشروع
+      setF("license_project_no", formatted);
 
-          {/* (الرخصة) Editable — تظهر دائمًا */}
-          <Field label={licProjectNoLabel} icon={FaHashtag}>
-            <input
-              className="input"
-              value={form.license_project_no}
-              placeholder="—"
-              onChange={(e) => setF("license_project_no", e.target.value)}
-            />
-          </Field>
+      // تحديث رقم الرخصة فقط لو المستخدم لم يضف شيء بعد الشرطة
+      if (!form.license_no || form.license_no.startsWith(form.license_project_no)) {
+        setF("license_no", formatted + "-"); // ← الشرطة المطلوبة
+      }
+    }}
+  />
+</Field>
 
-          <Field label={licProjectNameLabel} icon={FaInfoCircle}>
-            <input
-              className="input"
-              value={form.license_project_name}
-              placeholder="—"
-              onChange={(e) => setF("license_project_name", e.target.value)}
-            />
-          </Field>
+
 
           {/* الإرفاق */}
           <Field label={t("attach_building_license")} icon={FaPaperclip}>
@@ -599,41 +674,180 @@ export default function LicenseStep({ projectId, onPrev, onNext }) {
         </div>
       )}
 
-      {/* 4) الاستشاري */}
-      <h4 className="mt-16">{t("consultant_details")}</h4>
-      {isView ? (
-        <div className="form-grid cols-4">
-          <ViewRow label={t("consultant")} value={form.consultant_name} icon={FaUser} />
-          <ViewRow label={t("consultant_lic")} value={form.consultant_license_no} icon={FaHashtag} />
-        </div>
-      ) : (
-        <div className="form-grid cols-4">
-          <Field label={t("consultant")} icon={FaUser}>
-            <input className="input" value={form.consultant_name} onChange={(e) => setF("consultant_name", e.target.value)} />
-          </Field>
-          <Field label={t("consultant_lic")} icon={FaHashtag}>
-            <input className="input" value={form.consultant_license_no} onChange={(e) => setF("consultant_license_no", e.target.value)} />
-          </Field>
-        </div>
-      )}
+{/* 4) الاستشاري */}
+<h4 className="mt-16">{t("consultant_details")}</h4>
+<div className="form-grid cols-4">
+  
+  {/* 🔵 حقل الاستشاري (Search + Input) */}
+  <Field label={t("consultant")} icon={FaUser}>
+    <div style={{ position: "relative" }}>
+      
+      <input
+        className="input"
+        placeholder="اكتب أو ابحث عن اسم الاستشاري"
+        value={form.consultant_name}
+        onChange={(e) => {
+          setF("consultant_name", e.target.value);
+          setConsultantQuery(e.target.value);
+          setShowConsultantSuggestions(true);
+        }}
+        onFocus={() => setShowConsultantSuggestions(true)}
+        onBlur={() => setTimeout(() => setShowConsultantSuggestions(false), 150)}
+      />
 
-      {/* 5) المقاول */}
-      <h4 className="mt-16">{t("contractor_details")}</h4>
-      {isView ? (
-        <div className="form-grid cols-4">
-          <ViewRow label={t("contractor")} value={form.contractor_name} icon={FaUser} />
-          <ViewRow label={t("contractor_lic")} value={form.contractor_license_no} icon={FaHashtag} />
-        </div>
-      ) : (
-        <div className="form-grid cols-4">
-          <Field label={t("contractor")} icon={FaUser}>
-            <input className="input" value={form.contractor_name} onChange={(e) => setF("contractor_name", e.target.value)} />
-          </Field>
-          <Field label={t("contractor_lic")} icon={FaHashtag}>
-            <input className="input" value={form.contractor_license_no} onChange={(e) => setF("contractor_license_no", e.target.value)} />
-          </Field>
+      {/* 🔵 قائمة الاقتراحات */}
+      {showConsultantSuggestions && consultantQuery && (
+        <div
+          style={{
+            position: "absolute",
+            background: "white",
+            border: "1px solid #ccc",
+            width: "100%",
+            maxHeight: "180px",
+            overflowY: "auto",
+            zIndex: 1000,
+          }}
+        >
+          {consultantsList
+            .filter((c) =>
+              c.name.toLowerCase().includes(consultantQuery.toLowerCase())
+            )
+            .map((c, i) => (
+              <div
+                key={i}
+                style={{ padding: "8px", cursor: "pointer" }}
+                onMouseDown={() => {
+                  setF("consultant_name", c.name);
+                  setF("consultant_license_no", c.license);
+                  setConsultantQuery(c.name);
+                }}
+              >
+                {c.name}
+              </div>
+            ))}
+
+          {/* لو مفيش نتائج */}
+          {consultantsList.filter((c) =>
+            c.name.toLowerCase().includes(consultantQuery.toLowerCase())
+          ).length === 0 && (
+            <div style={{ padding: "8px", opacity: 0.6 }}>
+              لا يوجد — اكتب اسم جديد
+            </div>
+          )}
         </div>
       )}
+    </div>
+  </Field>
+
+  {/* 🔵 رقم رخصة الاستشاري */}
+  <Field label={t("consultant_lic")} icon={FaHashtag}>
+    <input
+      className="input"
+      placeholder="اكتب رقم رخصة الاستشاري"
+      value={form.consultant_license_no}
+      onChange={(e) => setF("consultant_license_no", e.target.value)}
+    />
+  </Field>
+</div>
+
+{/* 5) المقاول */}
+<h4 className="mt-16">{t("contractor_details")}</h4>
+
+{isView ? (
+  <div className="form-grid cols-4">
+    <ViewRow
+      label={t("contractor")}
+      value={form.contractor_name}
+      icon={FaUser}
+    />
+    <ViewRow
+      label={t("contractor_lic")}
+      value={form.contractor_license_no}
+      icon={FaHashtag}
+    />
+  </div>
+) : (
+  <div className="form-grid cols-4">
+
+    {/* 🔵 حقل المقاول (بحث + كتابة) */}
+    <Field label={t("contractor")} icon={FaUser}>
+      <div style={{ position: "relative" }}>
+
+        <input
+          className="input"
+          placeholder="اكتب أو ابحث عن اسم المقاول"
+          value={form.contractor_name}
+          onChange={(e) => {
+            setF("contractor_name", e.target.value);
+            setShowContractorSuggestions(true);
+          }}
+          onFocus={() => setShowContractorSuggestions(true)}
+          onBlur={() =>
+            setTimeout(() => setShowContractorSuggestions(false), 150)
+          }
+        />
+
+        {/* قائمة الاقتراحات */}
+        {showContractorSuggestions && form.contractor_name && (
+          <div
+            style={{
+              position: "absolute",
+              top: "100%",
+              left: 0,
+              right: 0,
+              background: "white",
+              border: "1px solid #ccc",
+              zIndex: 1000,
+              maxHeight: "200px",
+              overflowY: "auto",
+            }}
+          >
+            {contractorsList
+              .filter((c) =>
+                c.name
+                  .toLowerCase()
+                  .includes(form.contractor_name.toLowerCase())
+              )
+              .map((c, i) => (
+                <div
+                  key={i}
+                  style={{ padding: "8px", cursor: "pointer" }}
+                  onMouseDown={() => {
+                    setF("contractor_name", c.name);
+                    setF("contractor_license_no", c.license);
+                  }}
+                >
+                  {c.name}
+                </div>
+              ))}
+
+            {contractorsList.filter((c) =>
+              c.name.toLowerCase().includes(form.contractor_name.toLowerCase())
+            ).length === 0 && (
+              <div style={{ padding: "8px", opacity: 0.7 }}>
+                لا يوجد — اكتب اسم جديد
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Field>
+
+    {/* 🔵 رقم رخصة المقاول */}
+    <Field label={t("contractor_lic")} icon={FaHashtag}>
+      <input
+        className="input"
+        placeholder="اكتب رقم رخصة المقاول"
+        value={form.contractor_license_no}
+        onChange={(e) =>
+          setF("contractor_license_no", e.target.value)
+        }
+      />
+    </Field>
+
+  </div>
+)}
+
 
       <StepActions onPrev={onPrev} onNext={saveAndNext} />
     </WizardShell>
