@@ -152,36 +152,52 @@ export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isVi
     </div>
   );
 
-  // ✨ NEW: formatter for internal code => "M" + odd digits only
-  const toOddDigits = (s) =>
-    (s || "")
-      .replace(/[^0-9]/g, "")  // ارقام فقط
-      .replace(/[02468]/g, ""); // شيل الأرقام الزوجية
+// ✨ NEW: formatter for internal code => "M" + digits only (زوجي + فردي)
+const toDigits = (s) =>
+  (s || "").replace(/[^0-9]/g, ""); // أرقام فقط بدون حذف الزوجي
 
-  const formatInternalCode = (raw) => {
-    const digits = toOddDigits(raw);
-    // الحد الأقصى للطول الكلي 40 حرف (M + حتى 39 رقم فردي)
-    return ("M" + digits).slice(0, 40);
-  };
+const formatInternalCode = (raw) => {
+  const digits = toDigits(raw);
+  return ("M" + digits).slice(0, 40);
+};
+const isLastDigitOdd = (code) => {
+  const last = code.replace(/\D/g, "").slice(-1);
+  return ["1", "3", "5", "7", "9"].includes(last);
+};
 
-  const handleSaveAndNext = async () => {
-    if (!projectId) return;
-    try {
-      const payload = {
-        project_type: projectType || null,
-        villa_category: projectType === "villa" ? (villaCategory || null) : null,
-        contract_type: contractType || null,
-        // ✨ NEW: send to API (M + odd digits only)
-        internal_code: internalCode ? formatInternalCode(internalCode) : null,
-      };
-      await api.patch(`projects/${projectId}/`, payload);
-      setLocalIsView(true);
-      sessionStorage.setItem(SS_KEY, "true");
-      if (onNext && canProceed) onNext();
-    } catch (e) {
-      console.error("Project setup save failed:", e);
-    }
-  };
+const handleSaveAndNext = async () => {
+  if (!projectId) return;
+
+  const formatted = formatInternalCode(internalCode);
+
+  // ✅ التحقق إن آخر رقم فردي
+  if (!isLastDigitOdd(formatted)) {
+    alert(
+      lang === "ar"
+        ? "آخر رقم في الكود يجب أن يكون فردي (1,3,5,7,9)."
+        : "The last digit must be odd (1,3,5,7,9)."
+    );
+    return;
+  }
+
+  try {
+    const payload = {
+      project_type: projectType || null,
+      villa_category: projectType === "villa" ? (villaCategory || null) : null,
+      contract_type: contractType || null,
+      internal_code: formatted,
+    };
+
+    await api.patch(`projects/${projectId}/`, payload);
+    setLocalIsView(true);
+    sessionStorage.setItem(SS_KEY, "true");
+
+    if (onNext && canProceed) onNext();
+  } catch (e) {
+    console.error("Project setup save failed:", e);
+  }
+};
+
 
   return (
     <WizardShell title={labels.pageTitle}>
