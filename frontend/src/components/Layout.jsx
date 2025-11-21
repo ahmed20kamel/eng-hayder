@@ -9,21 +9,14 @@ export default function Layout({ children }) {
   const isRTL = lang === "ar";
 
   return (
-    <div
-      className="layout"
-      lang={lang}
-      dir={isRTL ? "rtl" : "ltr"}
-      style={{
-        display: "grid",
-        gridTemplateColumns: "auto 1fr",
-        minHeight: "100vh",
-      }}
-    >
+    <div className="layout" lang={lang} dir={isRTL ? "rtl" : "ltr"}>
+      {/* Sidebar placeholder for grid */}
+      <div className="sidebar-placeholder"></div>
       <Sidebar />
       <div className="main">
         <NavBar />
         <Breadcrumbs />
-        <main className="content container">{children}</main>
+        <main className="main-content">{children}</main>
       </div>
     </div>
   );

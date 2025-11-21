@@ -2,7 +2,7 @@
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
-export default function WizardShell({ icon: Icon, title, children, footer }) {
+export default function WizardShell({ title, children, footer }) {
   const { i18n } = useTranslation();
   const isRTL = i18n.language === "ar";
   const headingId = useId();
@@ -16,19 +16,15 @@ export default function WizardShell({ icon: Icon, title, children, footer }) {
     >
       <h3
         id={headingId}
+        className="page-title"
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          margin: 0,
           textAlign: isRTL ? "right" : "left",
         }}
       >
-        {Icon ? <Icon aria-hidden /> : null}
-        <span>{title}</span>
+        {title}
       </h3>
 
-      <div className="content mt-8">
+      <div className="card-body">
         {children}
       </div>
 

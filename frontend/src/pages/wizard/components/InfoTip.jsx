@@ -1,8 +1,9 @@
 // src/pages/wizard/components/InfoTip.jsx
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 /**
- * أيقونة معلومات خفيفة تفتح بوب-أوفر أنيق.
+ * أيقونة معلومات خفيفة تفتح بوب-أوفر أنيق عند hover.
  * props:
  * - text: محتوى الفقاعة
  * - align: "start" | "center" | "end"
@@ -11,17 +12,9 @@ import { useEffect, useRef, useState } from "react";
  * - inline: لو true تبقى أيقونة صغيرة شفافة تناسب وضعها داخل العنوان
  */
 export default function InfoTip({ text, align = "center", wide = false, title, inline = true }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (!ref.current) return;
-      if (!ref.current.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener("click", handler);
-    return () => document.removeEventListener("click", handler);
-  }, []);
 
   const isRTL = typeof document !== "undefined" && document?.dir === "rtl";
   const alignStyle =
@@ -36,82 +29,113 @@ export default function InfoTip({ text, align = "center", wide = false, title, i
       ref={ref}
       style={{
         position: "relative",
-        display: "inline-inline",
+        display: "inline-flex",
+        alignItems: "center",
       }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
     >
-      <button
-        type="button"
-        aria-label="معلومة"
-        title="معلومة"
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((v) => !v);
-        }}
+      <span
+        role="button"
+        aria-label={t("info_tooltip")}
+        title={t("info_tooltip")}
         style={{
-          // 👇 نسخة خفيفة جدًا تناسب وضعها جوّا النص
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
-          width: inline ? 18 : 26,
-          height: inline ? 18 : 26,
+          width: inline ? 20 : 24,
+          height: inline ? 20 : 24,
           borderRadius: "50%",
-          border: inline ? "none" : "1px solid #b6d6ff",
-          background: inline ? "transparent" : "#eaf3ff",
+          background: inline ? "rgba(11, 116, 173, 0.08)" : "rgba(11, 116, 173, 0.12)",
           color: "#0b74ad",
-          cursor: "pointer",
-          fontWeight: 700,
+          cursor: "help",
           lineHeight: 1,
           padding: 0,
           marginInlineStart: 6,
-          outline: "none",
+          transition: "all 0.2s ease",
+          border: "none",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = inline ? "rgba(11, 116, 173, 0.15)" : "rgba(11, 116, 173, 0.2)";
+          e.currentTarget.style.transform = "scale(1.1)";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = inline ? "rgba(11, 116, 173, 0.08)" : "rgba(11, 116, 173, 0.12)";
+          e.currentTarget.style.transform = "scale(1)";
         }}
       >
-        {/* أيقونة SVG أنعم من حرف i */}
+        {/* أيقونة i محسّنة */}
         <svg
-          width={inline ? 16 : 18}
-          height={inline ? 16 : 18}
+          width={inline ? 12 : 14}
+          height={inline ? 12 : 14}
           viewBox="0 0 24 24"
           fill="none"
           aria-hidden="true"
+          style={{ pointerEvents: "none" }}
         >
-          <circle cx="12" cy="12" r="10" stroke="#0b74ad" strokeWidth="1.6" fill={inline ? "transparent" : "#eaf3ff"} />
-          <path d="M12 10.5v6" stroke="#0b74ad" strokeWidth="1.8" strokeLinecap="round" />
-          <circle cx="12" cy="7.2" r="1.2" fill="#0b74ad" />
+          <path
+            d="M12 8V7M12 17V12"
+            stroke="#0b74ad"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <circle cx="12" cy="12" r="9" stroke="#0b74ad" strokeWidth="1.5" fill="none" />
         </svg>
-      </button>
+      </span>
 
       {open && (
         <div
-          role="dialog"
-          aria-modal="false"
+          role="tooltip"
           style={{
             position: "absolute",
-            top: "calc(100% + 8px)",
-            zIndex: 40,
+            top: "calc(100% + 10px)",
+            zIndex: 50,
             minWidth: wide ? 320 : 240,
             maxWidth: 460,
-            background: "#fff",
-            border: "1px solid #e1e8f5",
-            boxShadow: "0 10px 22px rgba(13,52,120,.15)",
-            borderRadius: 10,
-            padding: "12px 14px",
+            background: "#ffffff",
+            border: "1px solid #d1e7f5",
+            boxShadow: "0 4px 16px rgba(11, 116, 173, 0.12), 0 2px 4px rgba(0, 0, 0, 0.04)",
+            borderRadius: 8,
+            padding: "14px 16px",
             direction: isRTL ? "rtl" : "ltr",
+            opacity: open ? 1 : 0,
+            transform: open ? "translateY(0)" : "translateY(-4px)",
+            transition: "opacity 0.15s ease, transform 0.15s ease",
+            pointerEvents: "none",
             ...alignStyle,
           }}
         >
+          {/* سهم صغير */}
+          <div
+            style={{
+              position: "absolute",
+              top: -6,
+              [isRTL ? "right" : "left"]: align === "start" ? 12 : align === "end" ? "auto" : "50%",
+              [isRTL ? "left" : "right"]: align === "end" ? 12 : "auto",
+              transform: align === "center" ? "translateX(-50%)" : "none",
+              width: 0,
+              height: 0,
+              borderLeft: "6px solid transparent",
+              borderRight: "6px solid transparent",
+              borderBottom: "6px solid #ffffff",
+              filter: "drop-shadow(0 -2px 2px rgba(0, 0, 0, 0.05))",
+            }}
+          />
           {title ? (
             <div
               style={{
-                fontWeight: 700,
-                marginBottom: 6,
+                fontWeight: 600,
+                marginBottom: 8,
                 color: "#0b74ad",
-                fontSize: 14,
+                fontSize: 13,
+                letterSpacing: "0.01em",
               }}
             >
               {title}
             </div>
           ) : null}
-          <div style={{ lineHeight: 1.7, fontSize: 14, color: "#1d273b" }}>{text}</div>
+          <div style={{ lineHeight: 1.6, fontSize: 13, color: "#2d3748" }}>{text}</div>
         </div>
       )}
     </span>

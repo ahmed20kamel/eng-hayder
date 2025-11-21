@@ -1,105 +1,37 @@
-import { useEffect, useState, useRef } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { api } from "../services/api";
-
-function Card({ title, subtitle, children, actions }) {
-  return (
-    <div className="card p-14">
-      <div className="row row--space-between row--align-center">
-        <div>
-          <div className="fw-700">{title}</div>
-          {subtitle ? <div className="mini">{subtitle}</div> : null}
-        </div>
-        <div className="row row--gap-8">{actions}</div>
-      </div>
-      {children ? <div className="mt-8">{children}</div> : null}
-    </div>
-  );
-}
-
-function ConfirmDialog({ title, desc, confirmLabel, cancelLabel, onClose, onConfirm, danger, busy }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    const key = (e) => { if (e.key === "Escape") onClose?.(); };
-    document.addEventListener("keydown", key);
-    return () => document.removeEventListener("keydown", key);
-  }, [onClose]);
-  const onBackdrop = (e) => { if (e.target === ref.current) onClose?.(); };
-
-  return (
-    <div ref={ref} className="dlg-backdrop" onMouseDown={onBackdrop}>
-      <div className="dlg" role="dialog" aria-modal="true">
-        <div className="dlg-hd"><span className="dlg-title">{title}</span></div>
-        <div className="dlg-body">{desc}</div>
-        <div className="dlg-ft">
-          <button className="btn secondary" onClick={onClose} disabled={busy}>{cancelLabel || "إلغاء"}</button>
-          <button className={`btn ${danger ? "danger" : ""}`} onClick={onConfirm} disabled={busy}>
-            {confirmLabel || "تأكيد"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const fmtAED = (v) => {
-  const n = Number(v || 0);
-  if (!Number.isFinite(n)) return "—";
-  return `AED ${Math.round(n).toLocaleString("en-US")}`;
-};
+import Card from "../components/Card";
+import Button from "../components/Button";
+import Dialog from "../components/Dialog";
+import PageLayout from "../components/PageLayout";
+import useProjectData from "../hooks/useProjectData";
+import { formatMoney } from "../utils/formatters";
+import { getProjectTypeLabel, getVillaCategoryLabel, getContractTypeLabel } from "../utils/projectLabels";
+import { formatInternalCode } from "../utils/internalCodeFormatter";
 
 export default function ProjectView() {
   const { projectId } = useParams();
+  const { t, i18n } = useTranslation();
   const nav = useNavigate();
-
-  const [loading, setLoading] = useState(true);
-  const [project, setProject] = useState(null);
-  const [siteplan, setSiteplan] = useState(null);
-  const [license, setLicense] = useState(null);
-  const [contract, setContract] = useState(null);
-
+  const { project, siteplan, license, contract, awarding, loading } = useProjectData(projectId);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-
-  useEffect(() => {
-    if (!projectId) return;
-    let mounted = true;
-    (async () => {
-      try {
-        setLoading(true);
-        const [pRes, spRes, lcRes, ctRes] = await Promise.allSettled([
-          api.get(`projects/${projectId}/`),
-          api.get(`projects/${projectId}/siteplan/`),
-          api.get(`projects/${projectId}/license/`),
-          api.get(`projects/${projectId}/contract/`),
-        ]);
-        if (!mounted) return;
-        if (pRes.status === "fulfilled") setProject(pRes.value?.data || null);
-
-        if (spRes.status === "fulfilled") {
-          const d = spRes.value?.data;
-          setSiteplan(Array.isArray(d) ? d[0] : d || null);
-        }
-        if (lcRes.status === "fulfilled") {
-          const d = lcRes.value?.data;
-          setLicense(Array.isArray(d) ? d[0] : d || null);
-        }
-        if (ctRes.status === "fulfilled") {
-          const d = ctRes.value?.data;
-          setContract(Array.isArray(d) ? d[0] : d || null);
-        }
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
-    return () => { mounted = false; };
-  }, [projectId]);
+  const [errorMsg, setErrorMsg] = useState("");
 
   const hasSiteplan = !!siteplan;
-  const hasLicense  = !!license;
+  const hasLicense = !!license;
   const hasContract = !!contract;
+  const hasAwarding = !!awarding;
+  const isHousingLoan = contract?.contract_classification === "housing_loan_program";
 
-  const titleText = project?.display_name || project?.name || `مشروع #${projectId}`;
+  const titleText = project?.display_name || project?.name || t("wizard_project_prefix") + ` #${projectId}`;
+  const projectTypeLabel = getProjectTypeLabel(project?.project_type, i18n.language);
+  const villaCategoryLabel = project?.villa_category
+    ? getVillaCategoryLabel(project.villa_category, i18n.language)
+    : null;
+  const contractTypeLabel = getContractTypeLabel(project?.contract_type, i18n.language);
 
   const onDelete = async () => {
     if (!projectId) return;
@@ -107,176 +39,292 @@ export default function ProjectView() {
       setDeleting(true);
       await api.delete(`projects/${projectId}/`);
       setConfirmOpen(false);
-      nav("/projects"); // ← رجوع لصفحة “المشاريع”
+      nav("/projects");
     } catch (e) {
-      console.error(e);
-      alert("حدث خطأ أثناء الحذف.");
+      const msg = e?.response?.data?.detail || e?.message || t("delete_error");
+      setErrorMsg(msg);
+      setConfirmOpen(false);
     } finally {
       setDeleting(false);
     }
   };
 
   return (
-    <div className="container">
-      {/* زر حذف ثابت أعلى-يسار */}
-      <style>{`
-        .delete-fab {
-          position: absolute;
-          left: 16px; top: 16px; z-index: 2;
-        }
-        .btn.danger {
-          background: #e53935; color: #fff; border: none;
-        }
-        .btn.danger:hover { filter: brightness(0.95); }
-        .card--page { position: relative; }
-      `}</style>
+    <PageLayout loading={loading} loadingText={t("loading")}>
+      <div className="container">
+        {/* Header Section */}
+        <div className="prj-view-header">
+          <div className="prj-view-header__content">
+            <h1 className="prj-view-title">{titleText}</h1>
+            {project?.internal_code && (
+              <div className="prj-view-code">
+                {t("project_view_internal_code")}{" "}
+                <span className="mono">
+                  {formatInternalCode(project.internal_code)}
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="prj-view-header__actions">
+            <Button as={Link} variant="secondary" to="/projects">
+              {t("back_projects")}
+            </Button>
+            <Button as={Link} to={`/projects/${projectId}/wizard?step=setup&mode=edit`}>
+              {t("edit_project")}
+            </Button>
+            <Button variant="danger" onClick={() => setConfirmOpen(true)}>
+              {t("delete_project")}
+            </Button>
+          </div>
+        </div>
 
-      <div className="card card--page">
-        {/* زر الحذف أعلى اليسار */}
-        <button className="btn danger delete-fab" onClick={() => setConfirmOpen(true)}>
-          حذف المشروع
-        </button>
-
-        <div className="content">
-          <div className="row row--space-between row--align-center">
-            <h2 className="page-title">{`📦 ${titleText}`}</h2>
-
-            <div className="row row--gap-8">
-              <Link className="btn secondary" to="/projects">المشاريع ←</Link>
-              <Link className="btn" to={`/projects/${projectId}/wizard?step=setup&mode=edit`}>
-                تعديل المشروع
-              </Link>
+        {/* Cards Grid */}
+        <div className="prj-view-grid">
+          {/* Row 1: Three Cards - معلومات المشروع، المخطط، الرخصة */}
+          <div className="prj-view-grid-row">
+            {/* Project Information */}
+            <Card
+            title={t("project_information")}
+            actions={
+              <div className="prj-card-actions">
+                <Button as={Link} to={`/projects/${projectId}/setup/view`} variant="secondary">
+                  {t("view_details")}
+                </Button>
+                <Button as={Link} to={`/projects/${projectId}/wizard?step=setup&mode=edit`}>
+                  {t("edit")}
+                </Button>
+              </div>
+            }
+            className="prj-view-card"
+          >
+            <div className="prj-info-grid">
+              {project?.internal_code && (
+                <div className="prj-info-item">
+                  <div className="prj-info-label">{t("project_view_internal_code")}</div>
+                  <div className="prj-info-value">
+                    <span className="mono">
+                      {formatInternalCode(project.internal_code)}
+                    </span>
+                  </div>
+                </div>
+              )}
+              <div className="prj-info-item">
+                <div className="prj-info-label">{t("project_type_label")}</div>
+                <div className="prj-info-value">{projectTypeLabel || t("empty_value")}</div>
+              </div>
             </div>
+          </Card>
+
+            {/* Site Plan */}
+            <Card
+            title={t("site_plan")}
+            actions={
+              <div className="prj-card-actions">
+                <Button
+                  as={Link}
+                  disabled={!hasSiteplan}
+                  to={hasSiteplan ? `/projects/${projectId}/siteplan/view` : "#"}
+                  variant="secondary"
+                  onClick={(e) => {
+                    if (!hasSiteplan) e.preventDefault();
+                  }}
+                >
+                  {t("view_details")}
+                </Button>
+                <Button as={Link} to={`/projects/${projectId}/wizard?step=siteplan&mode=edit`}>
+                  {t("edit")}
+                </Button>
+              </div>
+            }
+            className="prj-view-card"
+          >
+            {hasSiteplan ? (
+              <div className="prj-info-grid">
+                <div className="prj-info-item">
+                  <div className="prj-info-label">{t("municipality_label")}</div>
+                  <div className="prj-info-value">{siteplan?.municipality || t("empty_value")}</div>
+                </div>
+                <div className="prj-info-item">
+                  <div className="prj-info-label">{t("zone_label")}</div>
+                  <div className="prj-info-value">{siteplan?.zone || t("empty_value")}</div>
+                </div>
+              </div>
+            ) : (
+              <div className="prj-empty-state">
+                {t("site_plan_not_added")}
+              </div>
+            )}
+          </Card>
+
+            {/* Building License */}
+            <Card
+            title={t("building_license")}
+            actions={
+              <div className="prj-card-actions">
+                <Button
+                  as={Link}
+                  disabled={!hasLicense}
+                  to={hasLicense ? `/projects/${projectId}/license/view` : "#"}
+                  variant="secondary"
+                  onClick={(e) => {
+                    if (!hasLicense) e.preventDefault();
+                  }}
+                >
+                  {t("view_details")}
+                </Button>
+                <Button as={Link} to={`/projects/${projectId}/wizard?step=license&mode=edit`}>
+                  {t("edit")}
+                </Button>
+              </div>
+            }
+            className="prj-view-card"
+          >
+            {hasLicense ? (
+              <div className="prj-info-grid">
+                <div className="prj-info-item">
+                  <div className="prj-info-label">{t("license_no_label")}</div>
+                  <div className="prj-info-value">{license?.license_no || t("empty_value")}</div>
+                </div>
+                <div className="prj-info-item">
+                  <div className="prj-info-label">{t("contractor_label")}</div>
+                  <div className="prj-info-value">{license?.contractor_name || t("empty_value")}</div>
+                </div>
+              </div>
+            ) : (
+              <div className="prj-empty-state">
+                {t("license_not_added")}
+              </div>
+            )}
+          </Card>
           </div>
 
-          {loading ? (
-            <div className="mini mt-12">⏳ جاري التحميل…</div>
-          ) : (
-            <div className="stack mt-12 stack--gap-12">
-
-              {/* معلومات المشروع */}
-              <Card
-                title="🧱 معلومات المشروع (عرض)"
-                subtitle="بيانات المشروع الأساسية"
-                actions={
-                  <>
-                    <Link className="btn" to={`/projects/${projectId}/setup/view`}>فتح العرض</Link>
-                    <Link className="btn secondary" to={`/projects/${projectId}/wizard?step=setup&mode=edit`}>تعديل</Link>
-                  </>
-                }
-              >
-                <div className="mini lh-18">
-                  <div>تصنيف: {project?.project_type || "—"}</div>
-                  {project?.villa_category ? <div>الفئة الفرعية: {project.villa_category}</div> : null}
-                  <div>نوع العقد: {project?.contract_type || "—"}</div>
+          {/* Row 2: Three Cards - العقد، الترسية، الملخص المالي */}
+          <div className="prj-view-grid-row">
+            {/* Contract Information */}
+            <Card
+            title={t("contract_information")}
+            actions={
+              <div className="prj-card-actions">
+                <Button
+                  as={Link}
+                  disabled={!hasContract}
+                  to={hasContract ? `/projects/${projectId}/contract/view` : "#"}
+                  variant="secondary"
+                  onClick={(e) => {
+                    if (!hasContract) e.preventDefault();
+                  }}
+                >
+                  {t("view_details")}
+                </Button>
+                <Button as={Link} to={`/projects/${projectId}/wizard?step=contract&mode=edit`}>
+                  {t("edit")}
+                </Button>
+              </div>
+            }
+            className="prj-view-card"
+          >
+            {hasContract ? (
+              <div className="prj-info-grid">
+                <div className="prj-info-item">
+                  <div className="prj-info-label">{t("contract_type_label")}</div>
+                  <div className="prj-info-value">{getContractTypeLabel(contract?.contract_type, i18n.language) || t("empty_value")}</div>
                 </div>
-              </Card>
-
-              {/* مخطط الأرض */}
-              <Card
-                title="📐 مخطط الأرض"
-                subtitle={hasSiteplan ? "بيانات متاحة" : "لا يوجد مخطط أرض بعد"}
-                actions={
-                  <>
-                    <Link
-                      className={`btn ${hasSiteplan ? "" : "disabled"}`}
-                      to={`/projects/${projectId}/siteplan/view`}
-                      aria-disabled={!hasSiteplan}
-                      onClick={(e) => { if (!hasSiteplan) e.preventDefault(); }}
-                    >
-                      فتح العرض
-                    </Link>
-                    <Link className="btn secondary" to={`/projects/${projectId}/wizard?step=siteplan&mode=edit`}>تعديل</Link>
-                  </>
-                }
-              >
-                <div className="mini">
-                  {hasSiteplan
-                    ? <>البلدية: {siteplan?.municipality || "—"} • المنطقة: {siteplan?.zone || "—"} • رقم الأرض: {siteplan?.land_no || "—"}</>
-                    : <>—</>}
+                <div className="prj-info-item prj-info-item--highlight">
+                  <div className="prj-info-label">{t("total_project_value")}</div>
+                  <div className="prj-info-value prj-info-value--money">
+                    {formatMoney(contract?.total_project_value)}
+                  </div>
                 </div>
-              </Card>
+              </div>
+            ) : (
+              <div className="prj-empty-state">
+                {t("contract_not_added")}
+              </div>
+            )}
+          </Card>
 
-              {/* ترخيص البناء */}
+            {/* Awarding (للقرض السكني فقط) */}
+            {isHousingLoan && (
               <Card
-                title="📄 ترخيص البناء"
-                subtitle={hasLicense ? "بيانات متاحة" : "لا يوجد ترخيص بعد"}
+                title={t("awarding_gulf_bank_contract_info")}
                 actions={
-                  <>
-                    <Link
-                      className={`btn ${hasLicense ? "" : "disabled"}`}
-                      to={`/projects/${projectId}/license/view`}
-                      aria-disabled={!hasLicense}
-                      onClick={(e) => { if (!hasLicense) e.preventDefault(); }}
-                    >
-                      فتح العرض
-                    </Link>
-                    <Link className="btn secondary" to={`/projects/${projectId}/wizard?step=license&mode=edit`}>تعديل</Link>
-                  </>
+                  <div className="prj-card-actions">
+                    {hasAwarding && (
+                      <Button as={Link} to={`/projects/${projectId}/awarding/view`} variant="secondary">
+                        {t("view_details")}
+                      </Button>
+                    )}
+                    <Button as={Link} to={`/projects/${projectId}/wizard?step=award`}>
+                      {hasAwarding ? t("edit") : t("add")}
+                    </Button>
+                  </div>
                 }
+                className="prj-view-card"
               >
-                <div className="mini">
-                  {hasLicense
-                    ? <>رقم الرخصة: {license?.license_no || "—"} • المقاول: {license?.contractor_name || "—"}</>
-                    : <>—</>}
-                </div>
+                {hasAwarding ? (
+                  <div className="prj-info-grid">
+                    <div className="prj-info-item">
+                      <div className="prj-info-label">{t("awarding_date")}</div>
+                      <div className="prj-info-value">{awarding?.award_date || t("empty_value")}</div>
+                    </div>
+                    <div className="prj-info-item">
+                      <div className="prj-info-label">{t("project_number")}</div>
+                      <div className="prj-info-value">{awarding?.project_number || t("empty_value")}</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="prj-empty-state">
+                    {t("awarding_not_added")}
+                  </div>
+                )}
               </Card>
+            )}
 
-              {/* معلومات العقد */}
-              <Card
-                title="📝 معلومات العقد"
-                subtitle={hasContract ? "بيانات متاحة" : "لا يوجد عقد بعد"}
-                actions={
-                  <>
-                    <Link
-                      className={`btn ${hasContract ? "" : "disabled"}`}
-                      to={`/projects/${projectId}/contract/view`}
-                      aria-disabled={!hasContract}
-                      onClick={(e) => { if (!hasContract) e.preventDefault(); }}
-                    >
-                      فتح العرض
-                    </Link>
-                    <Link className="btn secondary" to={`/projects/${projectId}/wizard?step=contract&mode=edit`}>تعديل</Link>
-                  </>
-                }
-              >
-                <div className="mini">
-                  {hasContract
-                    ? <>نوع العقد: {contract?.contract_type || "—"} • إجمالي المشروع: {fmtAED(contract?.total_project_value)}</>
-                    : <>—</>}
-                </div>
-              </Card>
-
-              {/* الملخص المالي */}
-              <Card
-                title="📊 الملخص المالي"
-                subtitle="ملخص القيم المالية وأتعاب الاستشاري والضريبة (قابل للطباعة)"
-                actions={
-                  <Link className="btn secondary" to={`/projects/${projectId}/summary`}>
-                    فتح الملخص
-                  </Link>
-                }
-              >
-                <div className="mini">استعراض مفصل لتوزيع التمويل (المالك/البنك) وصافي المقاول والضريبة.</div>
-              </Card>
+            {/* Financial Summary */}
+            <Card
+            title={t("financial_summary")}
+            subtitle={t("financial_summary_subtitle")}
+            actions={
+              <Button as={Link} variant="secondary" to={`/projects/${projectId}/summary`}>
+                {t("view_summary")}
+              </Button>
+            }
+            className="prj-view-card"
+          >
+            <div className="prj-summary-info">
+              {t("financial_summary_desc")}
             </div>
-          )}
+          </Card>
+          </div>
         </div>
       </div>
 
-      {/* نافذة تأكيد الحذف */}
-      {confirmOpen && (
-        <ConfirmDialog
-          title="تأكيد الحذف"
-          desc={<>هل أنت متأكد من حذف المشروع <b>{titleText}</b>؟<br />هذا الإجراء لا يمكن التراجع عنه.</>}
-          confirmLabel={deleting ? "جارٍ الحذف..." : "حذف نهائي"}
-          cancelLabel="إلغاء"
-          onClose={() => !deleting && setConfirmOpen(false)}
-          onConfirm={onDelete}
-          danger
-          busy={deleting}
-        />
-      )}
-    </div>
+      <Dialog
+        open={confirmOpen}
+        title={t("confirm_delete")}
+        desc={
+          <>
+            {t("confirm_delete_desc")}{" "}
+            <b>{titleText}</b>?<br />
+            {t("delete_cannot_undo")}
+          </>
+        }
+        confirmLabel={deleting ? t("deleting") : t("delete_permanent")}
+        cancelLabel={t("cancel")}
+        onClose={() => !deleting && setConfirmOpen(false)}
+        onConfirm={onDelete}
+        danger
+        busy={deleting}
+      />
+
+      <Dialog
+        open={!!errorMsg}
+        title={t("error")}
+        desc={errorMsg}
+        confirmLabel={t("ok")}
+        onClose={() => setErrorMsg("")}
+        onConfirm={() => setErrorMsg("")}
+      />
+    </PageLayout>
   );
 }

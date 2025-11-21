@@ -4,7 +4,8 @@ from .views import (
     ProjectViewSet,
     SitePlanViewSet,
     BuildingLicenseViewSet,
-    ContractViewSet,          # ⬅️ جديد
+    ContractViewSet,
+    AwardingViewSet,
 )
 
 # Projects
@@ -31,6 +32,12 @@ contract_detail = ContractViewSet.as_view(
     {"get": "retrieve", "patch": "partial_update", "delete": "destroy"}
 )
 
+# Awarding ⬇️
+awarding_list = AwardingViewSet.as_view({"get": "list", "post": "create"})
+awarding_detail = AwardingViewSet.as_view(
+    {"get": "retrieve", "patch": "partial_update", "delete": "destroy"}
+)
+
 urlpatterns = [
     path("projects/", project_list, name="project-list"),
     path("projects/<int:pk>/", project_detail, name="project-detail"),
@@ -44,4 +51,8 @@ urlpatterns = [
     # ✅ Contract endpoints المطلوبة للفرونت
     path("projects/<int:project_pk>/contract/", contract_list, name="contract-list"),
     path("projects/<int:project_pk>/contract/<int:pk>/", contract_detail, name="contract-detail"),
+    
+    # ✅ Awarding endpoints
+    path("projects/<int:project_pk>/awarding/", awarding_list, name="awarding-list"),
+    path("projects/<int:project_pk>/awarding/<int:pk>/", awarding_detail, name="awarding-detail"),
 ]

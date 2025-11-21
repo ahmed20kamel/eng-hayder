@@ -1,23 +1,26 @@
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import PageLayout from "../../components/PageLayout";
+import ViewPageHeader from "../../components/ViewPageHeader";
 import ContractStep from "../wizard/steps/ContractStep";
 
 export default function ViewContract() {
-  const { projectId } = useParams();           // ✅
+  const { projectId } = useParams();
+  const { t } = useTranslation();
 
   return (
-    <div className="container">
-      <div className="card card--page">
-        <div className="content">
-          <div className="row" style={{ justifyContent:"space-between", alignItems:"center" }}>
-            <h2 style={{ margin: 0 }}>📝 عرض عقد المشروع</h2>
-            <Link className="btn secondary" to={`/projects/${projectId}`}>رجوع ←</Link>
-          </div>
-
-          <div className="mt-12">
-            <ContractStep projectId={projectId} onPrev={null} onNext={null} />
-          </div>
+    <PageLayout>
+      <div className="container">
+        <ViewPageHeader
+          title={t("view_contract_title") || `${t("contract_information")} — ${t("bc_view")}`}
+          projectId={projectId}
+          showWizard={false}
+          backLabel={t("back")}
+        />
+        <div className="mt-12">
+          <ContractStep projectId={projectId} onPrev={null} onNext={null} isView={true} />
         </div>
       </div>
-    </div>
+    </PageLayout>
   );
 }

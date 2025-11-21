@@ -1,52 +1,79 @@
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { useState } from "react";
 import LanguageSwitcher from "./LanguageSwitcher";
-import { useTheme } from "../hooks/useTheme"; // 👈 استدعاء الهوك
+import { useTheme } from "../hooks/useTheme";
+import Button from "./Button";
+import { FaUser, FaChevronDown, FaSignOutAlt, FaCog } from "react-icons/fa";
 
 export default function NavBar() {
   const { t, i18n } = useTranslation();
   const lang = i18n.language;
   const isRTL = lang === "ar";
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
-  const { theme, toggleTheme } = useTheme(); // 👈 شغل الثيم
+  const { theme, toggleTheme } = useTheme();
+
+  // Get current user from localStorage or use default
+  const currentUser = localStorage.getItem("current_user") || (isRTL ? "مستخدم" : "User");
+
+  const companyName = isRTL 
+    ? " ال يافور للنقليات والمقاولات العامة"
+    : "Al Yafour Transportation & General Contracting";
 
   return (
-    <header className="navbar">
-      <div
-        className="navbar-in"
-        style={{
-          gridTemplateColumns: "1fr auto",
-          direction: isRTL ? "rtl" : "ltr",
-        }}
-      >
-        {/* عنوان يرجّع للرئيسية */}
-        <Link
-          to="/"
-          className="brand"
-          style={{
-            gap: 8,
-            fontWeight: 800,
-            display: "flex",
-            alignItems: "center",
-          }}
-        >
-          🧱 <span>{t("navbar_title")}</span>
+    <header className="navbar" dir={isRTL ? "rtl" : "ltr"}>
+      <div className="navbar-in">
+        <Link to="/" className="navbar-brand">
+          <div className="navbar-brand-content">
+            <div className="navbar-brand-main">{companyName}</div>
+            <div className="navbar-brand-sub">{isRTL ? "شركة مقاولات رائدة" : "Leading Construction Company"}</div>
+          </div>
         </Link>
 
-        {/* يمين النافبار */}
-        <div className="nav-right" style={{ display: "flex", gap: 10 }}>
-          {/* switch theme */}
-          <button
+        <div className="navbar-right">
+          <Button
+            variant="ghost"
             onClick={toggleTheme}
-            className="btn ghost"
-            style={{ padding: "8px 12px", fontSize: 16 }}
-            title={theme === "dark" ? "الوضع الفاتح" : "الوضع الغامق"}
+            className="navbar-btn"
+            title={theme === "dark" ? (isRTL ? "الوضع الفاتح" : "Light Mode") : (isRTL ? "الوضع الغامق" : "Dark Mode")}
           >
             {theme === "dark" ? "☀️" : "🌙"}
-          </button>
-
-          {/* مبدّل اللغة */}
+          </Button>
           <LanguageSwitcher />
+          
+          {/* User Menu */}
+          <div className="navbar-user-menu">
+            <button
+              className="navbar-user-btn"
+              onClick={() => setUserMenuOpen(!userMenuOpen)}
+              onBlur={() => setTimeout(() => setUserMenuOpen(false), 200)}
+            >
+              <div className="navbar-user-avatar">
+                <FaUser />
+              </div>
+              <span className="navbar-user-name">{currentUser}</span>
+              <FaChevronDown className={`navbar-user-chevron ${userMenuOpen ? "open" : ""}`} />
+            </button>
+            
+            {userMenuOpen && (
+              <div className="navbar-user-dropdown">
+                <div className="navbar-user-dropdown-header">
+                  <div className="navbar-user-dropdown-name">{currentUser}</div>
+                  <div className="navbar-user-dropdown-role">{isRTL ? "مدير النظام" : "System Administrator"}</div>
+                </div>
+                <div className="navbar-user-dropdown-divider"></div>
+                <button className="navbar-user-dropdown-item">
+                  <FaCog className="navbar-user-dropdown-icon" />
+                  <span>{isRTL ? "الإعدادات" : "Settings"}</span>
+                </button>
+                <button className="navbar-user-dropdown-item">
+                  <FaSignOutAlt className="navbar-user-dropdown-icon" />
+                  <span>{isRTL ? "تسجيل الخروج" : "Sign Out"}</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </header>

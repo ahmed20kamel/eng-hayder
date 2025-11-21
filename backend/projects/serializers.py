@@ -2,14 +2,14 @@ import re
 import json
 from rest_framework import serializers
 from .models import (
-    Project, SitePlan, SitePlanOwner, BuildingLicense, Contract
+    Project, SitePlan, SitePlanOwner, BuildingLicense, Contract, Awarding
 )
 
 # =========================
 # Helpers (snapshots)
 # =========================
 def build_siteplan_snapshot(sp: SitePlan):
-    """لقطة ثابتة من الـ SitePlan (بما فيها الملاك والملفات)."""
+    """إنشاء لقطة ثابتة من الـ SitePlan (بما فيها الملاك والملفات)."""
     owners = []
     for o in sp.owners.all().order_by("id"):
         owners.append({
@@ -57,45 +57,57 @@ def build_siteplan_snapshot(sp: SitePlan):
         "notes": sp.notes,
     }
 
-
 def build_license_snapshot(lic: BuildingLicense):
-    """لقطة ثابتة من الـ License تُحفظ داخل Contract.license_snapshot"""
-    return {
+    """إنشاء لقطة ثابتة من الـ License تُحفظ داخل Contract.license_snapshot"""
+    try:
+        return {
         "license": {
-            "license_type": lic.license_type,
-            "project_no": lic.project_no,
-            "project_name": getattr(lic, "project_name", ""),              # ✨
-            "license_project_no": getattr(lic, "license_project_no", ""),  # ✨
-            "license_project_name": getattr(lic, "license_project_name", ""),  # ✨
-            "license_no": lic.license_no,
-            "issue_date": lic.issue_date.isoformat() if lic.issue_date else None,
-            "last_issue_date": lic.last_issue_date.isoformat() if lic.last_issue_date else None,
-            "expiry_date": lic.expiry_date.isoformat() if lic.expiry_date else None,
-            "technical_decision_ref": lic.technical_decision_ref,
-            "technical_decision_date": lic.technical_decision_date.isoformat() if lic.technical_decision_date else None,
-            "license_notes": lic.license_notes,
-            "building_license_file": lic.building_license_file.url if lic.building_license_file else None,
+            "license_type": getattr(lic, "license_type", ""),
+            "project_no": getattr(lic, "project_no", ""),
+            "project_name": getattr(lic, "project_name", ""),
+            "license_project_no": getattr(lic, "license_project_no", ""),
+            "license_project_name": getattr(lic, "license_project_name", ""),
+            "license_no": getattr(lic, "license_no", ""),
+            "issue_date": lic.issue_date.isoformat() if getattr(lic, "issue_date", None) else None,
+            "last_issue_date": lic.last_issue_date.isoformat() if getattr(lic, "last_issue_date", None) else None,
+            "expiry_date": lic.expiry_date.isoformat() if getattr(lic, "expiry_date", None) else None,
+            "technical_decision_ref": getattr(lic, "technical_decision_ref", ""),
+            "technical_decision_date": lic.technical_decision_date.isoformat() if getattr(lic, "technical_decision_date", None) else None,
+            "license_notes": getattr(lic, "license_notes", ""),
+            "building_license_file": lic.building_license_file.url if getattr(lic, "building_license_file", None) else None,
         },
         "land": {
-            "city": lic.city,
-            "zone": lic.zone,
-            "sector": lic.sector,
-            "plot_no": lic.plot_no,
-            "plot_address": lic.plot_address,
-            "plot_area_sqm": float(lic.plot_area_sqm) if lic.plot_area_sqm is not None else None,
-            "land_use": lic.land_use,
-            "land_use_sub": lic.land_use_sub,
-            "land_plan_no": lic.land_plan_no,
+            "city": getattr(lic, "city", ""),
+            "zone": getattr(lic, "zone", ""),
+            "sector": getattr(lic, "sector", ""),
+            "plot_no": getattr(lic, "plot_no", ""),
+            "plot_address": getattr(lic, "plot_address", ""),
+            "plot_area_sqm": float(lic.plot_area_sqm) if getattr(lic, "plot_area_sqm", None) is not None else None,
+            "land_use": getattr(lic, "land_use", ""),
+            "land_use_sub": getattr(lic, "land_use_sub", ""),
+            "land_plan_no": getattr(lic, "land_plan_no", ""),
         },
         "parties": {
-            "consultant_name": lic.consultant_name,
-            "consultant_license_no": lic.consultant_license_no,
-            "contractor_name": lic.contractor_name,
-            "contractor_license_no": lic.contractor_license_no,
+            "consultant_same": getattr(lic, "consultant_same", True),
+            "design_consultant_name": getattr(lic, "design_consultant_name", ""),
+            "design_consultant_license_no": getattr(lic, "design_consultant_license_no", ""),
+            "supervision_consultant_name": getattr(lic, "supervision_consultant_name", ""),
+            "supervision_consultant_license_no": getattr(lic, "supervision_consultant_license_no", ""),
+
+            "contractor_name": getattr(lic, "contractor_name", ""),
+            "contractor_license_no": getattr(lic, "contractor_license_no", ""),
         },
-        "siteplan_snapshot": lic.siteplan_snapshot or {},
+
+        "siteplan_snapshot": getattr(lic, "siteplan_snapshot", {}) or {},
         "owners": getattr(lic, "owners", []),
     }
+    except Exception as e:
+        # ✅ في حالة أي خطأ، نرجع snapshot فارغ
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error building license snapshot: {e}", exc_info=True)
+        return {}
+
 
 # =========================
 # Project
@@ -105,7 +117,7 @@ class ProjectSerializer(serializers.ModelSerializer):
     has_license  = serializers.ReadOnlyField()
     completion   = serializers.ReadOnlyField()
 
-    # الكود الداخلي: M + أرقام فردية فقط (يتم تطبيعه)
+    # الكود الداخلي: M + أرقام، مع شرط أن يكون آخر رقم فردياً (1,3,5,7,9)
     internal_code = serializers.CharField(required=False, allow_blank=True, max_length=40)
 
     # اسم عرض مشتق من الملاك
@@ -129,15 +141,35 @@ class ProjectSerializer(serializers.ModelSerializer):
         }
 
     def validate_internal_code(self, value: str):
+        """
+        تطبيع الكود الداخلي:
+        - يسمح بأي أرقام
+        - يضيف حرف M في البداية
+        - يشترط أن يكون آخر رقم فردياً (1,3,5,7,9)
+        """
         if value in (None, ""):
             return value
+
+        # استخراج الأرقام فقط
         digits = re.sub(r"[^0-9]", "", value or "")
-        digits = re.sub(r"[02468]", "", digits)  # إزالة الزوجي
+        if not digits:
+            raise serializers.ValidationError("Internal code must contain at least one digit.")
+
+        # التحقق من أن آخر رقم فردي
+        last = digits[-1]
+        if last not in "13579":
+            raise serializers.ValidationError("Last digit of internal code must be odd (1,3,5,7,9).")
+
         normalized = ("M" + digits)[:40]
         return normalized
 
     def get_display_name(self, obj):
         # نكوّن الاسم من أول مالك في الـ SitePlan، ولو أكثر من مالك نضيف "وشركاؤه"
+        # ✅ إذا كان obj.name موجوداً، نستخدمه أولاً (هذا هو الاسم المحفوظ من الملاك)
+        if obj.name and obj.name.strip():
+            return obj.name
+        
+        # ✅ إذا لم يكن هناك اسم محفوظ، نحاول حسابه من الملاك
         try:
             sp = obj.siteplan
         except SitePlan.DoesNotExist:
@@ -157,7 +189,12 @@ class ProjectSerializer(serializers.ModelSerializer):
 
         if main_name:
             return f"{main_name} وشركاؤه" if owners_count > 1 else main_name
-        return f"مشروع #{obj.id}"
+        
+        # ✅ إذا لم يكن هناك اسم ولا ملاك، نستخدم ID أو نص افتراضي
+        project_id = getattr(obj, 'id', None)
+        if project_id:
+            return f"مشروع #{project_id}"
+        return "مشروع جديد"
 
 # =========================
 # SitePlan + Owners
@@ -177,7 +214,7 @@ class SitePlanOwnerSerializer(serializers.ModelSerializer):
 
 
 class SitePlanSerializer(serializers.ModelSerializer):
-    owners = SitePlanOwnerSerializer(many=True, required=False)
+    owners = SitePlanOwnerSerializer(many=True, read_only=True)
     application_file = serializers.FileField(required=False, allow_null=True)
 
     class Meta:
@@ -205,6 +242,7 @@ class SitePlanSerializer(serializers.ModelSerializer):
 
     # ----- helpers -----
     _owner_allowed = {
+        "id",  # ✅ إضافة id للملاك الموجودين
         "owner_name_ar", "owner_name_en",
         "nationality", "phone", "email",
         "id_number", "id_issue_date", "id_expiry_date", "id_attachment",
@@ -225,10 +263,18 @@ class SitePlanSerializer(serializers.ModelSerializer):
             ar = en
 
         c = {k: o.get(k) for k in SitePlanSerializer._owner_allowed if k in o}
+        # ✅ الحفاظ على id إذا كان موجوداً (للملاك الموجودين)
+        if "id" in o:
+            c["id"] = o["id"]
         if ar:
             c["owner_name_ar"] = ar
         if en:
             c["owner_name_en"] = en
+        # ✅ التأكد من أن جميع الحقول المهمة موجودة
+        for field in ["id_number", "nationality", "phone", "email", "id_issue_date", "id_expiry_date", 
+                      "right_hold_type", "share_possession", "share_percent"]:
+            if field in o:
+                c[field] = o[field]
         if "share_percent" in c and c["share_percent"] in ("", None):
             c["share_percent"] = None
         return c
@@ -238,41 +284,219 @@ class SitePlanSerializer(serializers.ModelSerializer):
         return bool((o.get("owner_name_ar") or "").strip() or (o.get("owner_name_en") or "").strip())
 
     def _extract_owners_from_request(self):
+        """استخراج بيانات الملاك من الطلب (يدعم JSON و multipart)"""
         req = self.context.get("request")
         if not req:
             return None
 
         data = req.data
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # ✅ Debug: طباعة نوع البيانات
+        logger.info(f"Extract owners: req.data type: {type(data)}, has items: {hasattr(data, 'items')}")
+        if hasattr(data, 'keys'):
+            all_keys = list(data.keys())
+            logger.info(f"Extract owners: req.data total keys: {len(all_keys)}")
+            # ✅ البحث عن مفاتيح owners
+            owner_keys = [k for k in all_keys if 'owner' in k.lower()]
+            logger.info(f"Extract owners: owner-related keys: {owner_keys}")
+            # ✅ طباعة جميع المفاتيح التي تطابق pattern owners[...]
+            matching_keys = [k for k in all_keys if self._owners_key_re.match(str(k))]
+            logger.info(f"Extract owners: matching owners pattern keys: {matching_keys}")
+            if not matching_keys:
+                logger.warning(f"Extract owners: NO keys matching owners pattern!")
+                # ✅ طباعة جميع المفاتيح للتحقق
+                logger.warning(f"Extract owners: All req.data keys: {all_keys}")
+                # ✅ البحث عن أي مفاتيح تحتوي على "owner" (حتى لو لم تطابق الـ pattern)
+                any_owner_keys = [k for k in all_keys if 'owner' in str(k).lower()]
+                if any_owner_keys:
+                    logger.warning(f"Extract owners: Found keys with 'owner' in name: {any_owner_keys}")
+        
+        # الحصول على الملفات من request.FILES
+        try:
+            files = req.FILES
+        except AttributeError:
+            files = getattr(req, '_request', {}).get('FILES', {})
+        
+        if not files:
+            files = {}
 
-        if isinstance(data.get("owners"), list):
-            raw = data.get("owners")
-        elif isinstance(data.get("owners"), str):
-            try:
-                parsed = json.loads(data.get("owners"))
-                raw = parsed if isinstance(parsed, list) else []
-            except Exception:
-                raw = []
-        else:
+        # ✅ محاولة الحصول على req.POST مباشرة (لـ FormData)
+        # ✅ في DRF، req._request.POST يحتوي على البيانات من FormData
+        post_data = None
+        try:
+            # ✅ محاولة من req._request.POST (الطلب الأصلي في DRF)
+            if hasattr(req, '_request') and hasattr(req._request, 'POST'):
+                post_data = req._request.POST
+                logger.info(f"Extract owners: req._request.POST available, type: {type(post_data)}")
+                if post_data and hasattr(post_data, 'keys'):
+                    logger.info(f"Extract owners: req._request.POST keys (first 20): {list(post_data.keys())[:20]}")
+            # ✅ محاولة من req.POST (fallback)
+            elif hasattr(req, 'POST'):
+                post_data = req.POST
+                logger.info(f"Extract owners: req.POST available, type: {type(post_data)}")
+                if post_data and hasattr(post_data, 'keys'):
+                    logger.info(f"Extract owners: req.POST keys (first 20): {list(post_data.keys())[:20]}")
+        except Exception as e:
+            logger.warning(f"Extract owners: req.POST not available: {e}")
+            pass
+
+        # معالجة البيانات النصية
+        # ✅ التحقق من وجود "owners" كـ list أو string أولاً
+        owners_raw = data.get("owners")
+        logger.info(f"Extract owners: owners_raw type: {type(owners_raw)}, value: {owners_raw}")
+        
+        raw = None  # تهيئة raw
+        
+        if isinstance(owners_raw, list) and len(owners_raw) > 0:
+            raw = owners_raw
+            logger.info(f"Extract owners: Found owners as list, count: {len(raw)}")
+        elif isinstance(owners_raw, str) and owners_raw.strip():
+            # ✅ التحقق من أن الـ string ليس "[object Object]" (خطأ في JavaScript)
+            if owners_raw.strip() in ("[object Object]", "[object object]"):
+                logger.warning(f"Extract owners: owners is '[object Object]' string (JS error), ignoring and extracting from keys")
+                raw = None  # تجاهل هذا القيمة الخاطئة
+            else:
+                try:
+                    parsed = json.loads(owners_raw)
+                    raw = parsed if isinstance(parsed, list) and len(parsed) > 0 else None
+                    if raw:
+                        logger.info(f"Extract owners: Found owners as JSON string, parsed count: {len(raw)}")
+                    else:
+                        logger.warning(f"Extract owners: Parsed owners is empty, trying to extract from keys")
+                except Exception as e:
+                    logger.warning(f"Extract owners: Failed to parse owners JSON string: {e}, trying to extract from keys")
+                    raw = None  # تجاهل هذا القيمة الخاطئة
+        
+        # ✅ إذا لم يكن owners موجوداً كـ list أو string صالح، نحاول استخراجه من المفاتيح
+        if raw is None:
             buckets = {}
-            for k, v in data.items():
-                m = self._owners_key_re.match(str(k))
-                if not m:
-                    continue
-                idx = int(m.group(1))
-                key = m.group(2)
-                buckets.setdefault(idx, {})[key] = v
+            logger.info(f"Extract owners: owners not found as valid list/string, trying to extract from keys (owners[0][...])")
+            
+            # ✅ أولاً: محاولة استخراج من req._request.POST مباشرة (البيانات النصية من FormData)
+            # ✅ في DRF مع MultiPartParser، req._request.POST يحتوي على البيانات النصية من FormData
+            # ✅ هذا مهم جداً - عندما يكون هناك ملفات، req.data قد لا يحتوي على البيانات النصية
+            if post_data and hasattr(post_data, 'get'):
+                try:
+                    post_keys = list(post_data.keys()) if hasattr(post_data, 'keys') else []
+                    logger.info(f"Extract owners: Iterating over req._request.POST, total keys: {len(post_keys)}")
+                    
+                    for k in post_keys:
+                        v = post_data.get(k)
+                        
+                        # ✅ التحقق من الـ pattern
+                        k_str = str(k)
+                        m = self._owners_key_re.match(k_str)
+                        if not m:
+                            continue
+                        
+                        idx = int(m.group(1))
+                        key = m.group(2)
+                        # ✅ تجاهل id_attachment_url لأنه ليس حقل في النموذج
+                        if key == "id_attachment_url":
+                            continue
+                        
+                        logger.info(f"Extract owners: Found owner field in req._request.POST: owners[{idx}][{key}] = {v}")
+                        # ✅ معالجة id_attachment_delete كـ boolean
+                        if key == "id_attachment_delete":
+                            buckets.setdefault(idx, {})[key] = str(v).lower() in ("true", "1", "yes")
+                        else:
+                            buckets.setdefault(idx, {})[key] = v
+                    
+                    logger.info(f"Extract owners: After req._request.POST extraction, buckets count: {len(buckets)}")
+                except Exception as e:
+                    logger.error(f"Error extracting from req._request.POST: {e}", exc_info=True)
+            
+            # ✅ ثانياً: محاولة استخراج من req.data (fallback إذا لم يكن post_data متاحاً)
+            if not buckets and hasattr(data, 'get'):
+                try:
+                    # ✅ QueryDict في Django - نستخدم .keys() للحصول على جميع المفاتيح
+                    data_keys = list(data.keys()) if hasattr(data, 'keys') else []
+                    logger.info(f"Extract owners: Fallback - Iterating over req.data, total keys: {len(data_keys)}")
+                    
+                    for k in data_keys:
+                        # ✅ تخطي الملفات - سنتعامل معها من req.FILES
+                        v = data.get(k)
+                        if hasattr(v, 'read'):  # File object
+                            logger.debug(f"Extract owners: Skipping file object: {k}")
+                            continue
+                        
+                        # ✅ التحقق من الـ pattern
+                        k_str = str(k)
+                        m = self._owners_key_re.match(k_str)
+                        if not m:
+                            continue
+                        
+                        idx = int(m.group(1))
+                        key = m.group(2)
+                        # ✅ تجاهل id_attachment_url لأنه ليس حقل في النموذج
+                        if key == "id_attachment_url":
+                            continue
+                        
+                        logger.info(f"Extract owners: Found owner field in req.data: owners[{idx}][{key}] = {v}")
+                        # ✅ معالجة id_attachment_delete كـ boolean
+                        if key == "id_attachment_delete":
+                            buckets.setdefault(idx, {})[key] = str(v).lower() in ("true", "1", "yes")
+                        else:
+                            buckets.setdefault(idx, {})[key] = v
+                    
+                    logger.info(f"Extract owners: After req.data extraction, buckets count: {len(buckets)}")
+                except Exception as e:
+                    logger.error(f"Error extracting from req.data: {e}", exc_info=True)
+            
+            
+            # ✅ دمج الملفات من req.FILES
+            if files:
+                try:
+                    logger.info(f"Extract owners: Processing files from req.FILES, count: {len(files) if hasattr(files, '__len__') else 'unknown'}")
+                    for k, v in files.items():
+                        k_str = str(k)
+                        logger.debug(f"Extract owners: Checking file key: {k_str}")
+                        m = self._owners_key_re.match(k_str)
+                        if not m:
+                            continue
+                        idx = int(m.group(1))
+                        key = m.group(2)
+                        if key == "id_attachment":  # فقط ملفات الهوية
+                            logger.info(f"Extract owners: Found id_attachment file for owner {idx}: {k_str}")
+                            buckets.setdefault(idx, {})[key] = v
+                        else:
+                            logger.debug(f"Extract owners: Skipping file key (not id_attachment): {k_str}")
+                except (AttributeError, TypeError) as e:
+                    logger.error(f"Extract owners: Error processing files: {e}", exc_info=True)
+            
+            # ✅ إذا كان هناك buckets، نرجع قائمة الملاك
+            # إذا لم يكن هناك buckets، نرجع None (يعني لم يتم إرسال owners)
             raw = [buckets[i] for i in sorted(buckets.keys())] if buckets else None
+            logger.info(f"Extract owners: buckets count: {len(buckets) if buckets else 0}, raw: {len(raw) if raw else 0}")
+            if buckets:
+                logger.info(f"Extract owners: buckets content: {buckets}")
 
         if raw is None:
+            logger.warning("Extract owners: raw is None, returning None")
             return None
 
+        # تنظيف وتطبيع البيانات
         cleaned = []
-        for o in raw:
+        for idx, o in enumerate(raw):
             if not isinstance(o, dict):
+                logger.warning(f"Extract owners: Skipping non-dict at index {idx}: {type(o)}")
                 continue
+            logger.debug(f"Extract owners: Processing owner {idx}: {o}")
             c = self._normalize_owner(o)
-            if self._has_name(c):
+            logger.debug(f"Extract owners: Normalized owner {idx}: {c}")
+            has_name = self._has_name(c)
+            logger.debug(f"Extract owners: Owner {idx} has_name: {has_name}")
+            if has_name:
                 cleaned.append(c)
+                logger.info(f"Extract owners: Added owner {idx} to cleaned list")
+            else:
+                logger.warning(f"Extract owners: Skipping owner {idx} without name. Normalized: {c}")
+        
+        logger.info(f"Extract owners: Final cleaned count: {len(cleaned)}")
+        if cleaned:
+            logger.info(f"Extract owners: Cleaned owners: {cleaned}")
         return cleaned
 
     def validate(self, attrs):
@@ -286,8 +510,10 @@ class SitePlanSerializer(serializers.ModelSerializer):
             attrs["owners"] = normalized
         return attrs
 
-    # ==== NEW: تحديث اسم المشروع بناءً على الملاك ====
     def _update_project_name_from_owners(self, siteplan: SitePlan):
+        """تحديث اسم المشروع بناءً على الملاك"""
+        # ✅ إعادة تحميل الملاك من قاعدة البيانات للتأكد من أحدث البيانات
+        siteplan.refresh_from_db()
         qs = siteplan.owners.order_by("id")
         owners_count = qs.count()
         main = ""
@@ -298,8 +524,65 @@ class SitePlanSerializer(serializers.ModelSerializer):
                 main = ar or en
                 break
         if main:
-            siteplan.project.name = f"{main} وشركاؤه" if owners_count > 1 else main
-            siteplan.project.save(update_fields=["name"])
+            new_name = f"{main} وشركاؤه" if owners_count > 1 else main
+            # ✅ تحديث اسم المشروع فقط إذا كان مختلفاً
+            if siteplan.project.name != new_name:
+                siteplan.project.name = new_name
+                siteplan.project.save(update_fields=["name"])
+
+    def _sync_owners_to_license_and_contract(self, siteplan: SitePlan):
+        """تحديث الملاك في الرخصة والعقد تلقائياً عند تحديثها في Site Plan"""
+        try:
+            project = siteplan.project
+            
+            # ✅ تحديث الرخصة
+            try:
+                license_obj = project.license
+                # ✅ تحديث siteplan_snapshot
+                license_obj.siteplan_snapshot = build_siteplan_snapshot(siteplan)
+                
+                # ✅ تحديث حقل owners في الرخصة من الملاك الجديدة
+                owners_list = []
+                for o in siteplan.owners.all().order_by("id"):
+                    owners_list.append({
+                        "owner_name_ar": o.owner_name_ar,
+                        "owner_name_en": o.owner_name_en,
+                        "nationality": o.nationality,
+                        "phone": o.phone,
+                        "email": o.email,
+                        "id_number": o.id_number,
+                        "id_issue_date": o.id_issue_date.isoformat() if o.id_issue_date else "",
+                        "id_expiry_date": o.id_expiry_date.isoformat() if o.id_expiry_date else "",
+                        "right_hold_type": o.right_hold_type,
+                        "share_possession": o.share_possession,
+                        "share_percent": str(o.share_percent) if o.share_percent is not None else "100.00",
+                    })
+                
+                license_obj.owners = owners_list
+                license_obj.save(update_fields=["siteplan_snapshot", "owners"])
+            except BuildingLicense.DoesNotExist:
+                pass
+            
+            # ✅ تحديث العقد
+            try:
+                contract_obj = project.contract
+                # ✅ إذا كانت الرخصة موجودة، نحدث license_snapshot في العقد
+                try:
+                    license_obj = project.license
+                    # ✅ إعادة تحميل الرخصة للتأكد من أحدث البيانات (بما فيها owners المحدثة)
+                    license_obj.refresh_from_db()
+                    contract_obj.license_snapshot = build_license_snapshot(license_obj)
+                    contract_obj.save(update_fields=["license_snapshot"])
+                except BuildingLicense.DoesNotExist:
+                    pass
+            except Contract.DoesNotExist:
+                pass
+                
+        except Exception as e:
+            # ✅ في حالة الخطأ، نكمل العملية (لا نوقف تحديث Site Plan)
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error syncing owners to license and contract: {e}")
 
     def create(self, validated_data):
         owners_data = validated_data.pop("owners", None)
@@ -309,31 +592,164 @@ class SitePlanSerializer(serializers.ModelSerializer):
         owners_data = [od for od in owners_data if self._has_name(od)]
 
         siteplan = SitePlan.objects.create(**validated_data)
+        
+        # ✅ حفظ الملاك بشكل صحيح
         for od in owners_data:
-            SitePlanOwner.objects.create(siteplan=siteplan, **od)
+            # ✅ استخراج id_attachment من od
+            file_obj = od.pop("id_attachment", None)
+            owner = SitePlanOwner.objects.create(siteplan=siteplan, **od)
+            
+            # ✅ إضافة الملف إذا كان موجوداً
+            if file_obj:
+                owner.id_attachment = file_obj
+                owner.save()
 
-        # ←← تحديث اسم المشروع بعد إنشاء الملاك
+        # ✅ تحديث اسم المشروع بعد إنشاء الملاك
+        siteplan.refresh_from_db()
         self._update_project_name_from_owners(siteplan)
+        
+        # ✅ تحديث الملاك في الرخصة والعقد تلقائياً (إذا كانت موجودة)
+        self._sync_owners_to_license_and_contract(siteplan)
+        
         return siteplan
 
-    def update(self, instance, validated_data):
-        owners_data = validated_data.pop("owners", None)
-        if owners_data is None:
-            owners_data = self._extract_owners_from_request()
 
+    def update(self, instance, validated_data):
+        from django.core.files.uploadedfile import InMemoryUploadedFile, UploadedFile
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # -----------------------------
+        # 1) سحب الملاك من validated_data (يمنع owners = ...)
+        # -----------------------------
+        owners_data = validated_data.pop("owners", None)
+        logger.info(f"Update: owners_data from validated_data: {owners_data is not None}")
+        
+        # ✅ دائماً نحاول استخراج الملاك من الطلب (لأن FormData لا يمر عبر validated_data)
+        extracted_owners = self._extract_owners_from_request()
+        logger.info(f"Update: extracted_owners from request: {extracted_owners is not None}, count: {len(extracted_owners) if extracted_owners else 0}")
+        
+        # ✅ نستخدم الملاك المستخرجة من الطلب إذا كانت موجودة
+        if extracted_owners is not None:
+            owners_data = extracted_owners
+            logger.info(f"Update: Using extracted owners, count: {len(owners_data)}")
+        elif owners_data is None:
+            logger.warning("Update: No owners found in request or validated_data")
+
+        # -----------------------------
+        # 2) تحديث حقول الـ SitePlan
+        # -----------------------------
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
 
-        if owners_data is not None:
-            owners_data = [od for od in owners_data if self._has_name(od)]
-            instance.owners.all().delete()
-            for od in owners_data:
-                SitePlanOwner.objects.create(siteplan=instance, **od)
+        # -----------------------------
+        # 3) لو مفيش ملاك في الريكوست → سيب الموجود وتحديث اسم المشروع
+        # -----------------------------
+        if owners_data is None:
+            # ✅ تحديث اسم المشروع من الملاك الموجودين
+            self._update_project_name_from_owners(instance)
+            return instance
 
-        # ←← تحديث اسم المشروع بعد تعديل الملاك
+        # -----------------------------
+        # 4) تنظيف وتطبيع بيانات الملاك
+        # -----------------------------
+        owners_data = [self._normalize_owner(od) for od in owners_data if self._has_name(od)]
+        
+        # ✅ إذا لم يكن هناك ملاك بعد التنظيف، نحذف الملاك الموجودين ونحدث اسم المشروع
+        if not owners_data:
+            # حذف جميع الملاك الموجودين
+            instance.owners.all().delete()
+            # تحديث اسم المشروع إلى القيمة الافتراضية
+            instance.project.name = ""
+            instance.project.save(update_fields=["name"])
+            # ✅ تحديث الملاك في الرخصة والعقد (حذف الملاك)
+            self._sync_owners_to_license_and_contract(instance)
+            return instance
+
+        # -----------------------------
+        # 5) استخراج الملاك الموجودين
+        # -----------------------------
+        existing = {o.id: o for o in instance.owners.all()}
+        received_ids = []
+
+        for od in owners_data:
+            # ✅ تحويل id إلى integer إذا كان string
+            oid_raw = od.get("id")
+            oid = None
+            if oid_raw is not None:
+                try:
+                    oid = int(oid_raw) if not isinstance(oid_raw, int) else oid_raw
+                except (ValueError, TypeError):
+                    oid = None
+            
+            # ✅ استخراج id_attachment من od (قد يكون File object أو None)
+            file_obj = od.pop("id_attachment", None)
+            # ✅ إذا كان id_attachment موجوداً في od كـ None صريح (من الفرونت)، نحذف الملف
+            delete_file = od.pop("id_attachment_delete", False)
+
+            if oid and oid in existing:
+                # ---- تحديث مالك موجود ----
+                obj = existing[oid]
+
+                # ✅ تحديث الملف أولاً
+                if file_obj and isinstance(file_obj, (InMemoryUploadedFile, UploadedFile)):
+                    # ملف جديد
+                    obj.id_attachment = file_obj
+                elif delete_file:
+                    # حذف الملف (إذا كان صريحاً)
+                    obj.id_attachment = None
+                # ✅ إذا لم يكن هناك ملف جديد ولا حذف، نحافظ على الملف الموجود (لا نفعل شيء)
+
+                # ✅ تحديث باقي الحقول
+                for k, v in od.items():
+                    # ✅ تخطي id لأنه موجود بالفعل
+                    if k == "id":
+                        continue
+                    # ✅ تخطي id_attachment_delete لأنه ليس حقل في النموذج
+                    if k == "id_attachment_delete":
+                        continue
+                    # ✅ تحديث الحقل
+                    setattr(obj, k, v)
+
+                # ✅ حفظ التغييرات
+                obj.save(update_fields=None)  # حفظ جميع الحقول
+                received_ids.append(oid)
+
+            else:
+                # ---- مالك جديد ----
+                # ✅ إزالة id من od لأن المالك جديد
+                od.pop("id", None)
+                new_owner = SitePlanOwner.objects.create(siteplan=instance, **od)
+                
+                # ✅ إضافة الملف إذا كان موجوداً
+                if file_obj and isinstance(file_obj, (InMemoryUploadedFile, UploadedFile)):
+                    new_owner.id_attachment = file_obj
+                    new_owner.save()
+                
+                received_ids.append(new_owner.id)
+
+        # -----------------------------
+        # 6) حذف الملاك اللي مش ظهروا في الريكوست
+        # -----------------------------
+        for oid, obj in existing.items():
+            if oid not in received_ids:
+                obj.delete()
+
+        # -----------------------------
+        # 7) تحديث اسم المشروع بعد حفظ الملاك
+        # -----------------------------
+        # ✅ إعادة تحميل instance للتأكد من أحدث البيانات
+        instance.refresh_from_db()
         self._update_project_name_from_owners(instance)
+        
+        # -----------------------------
+        # 8) تحديث الملاك في الرخصة والعقد تلقائياً
+        # -----------------------------
+        self._sync_owners_to_license_and_contract(instance)
+        
         return instance
+
 
 # =========================
 # Building License
@@ -343,39 +759,59 @@ class BuildingLicenseSerializer(serializers.ModelSerializer):
     siteplan_snapshot     = serializers.JSONField(read_only=True)
     owners_names = serializers.SerializerMethodField()
 
-    # حقول الرخصة/المطور + owners كـ JSON
-    owners = serializers.JSONField(required=False)  # يقبل list أو string JSON
-    project_name = serializers.CharField(required=False, allow_blank=True)          # (المطور)
-    license_project_no = serializers.CharField(required=False, allow_blank=True)    # (الرخصة)
-    license_project_name = serializers.CharField(required=False, allow_blank=True)  # (الرخصة)
+    consultant_same = serializers.BooleanField(required=False)
+    design_consultant_name = serializers.CharField(required=False, allow_blank=True)
+    design_consultant_license_no = serializers.CharField(required=False, allow_blank=True)
+    supervision_consultant_name = serializers.CharField(required=False, allow_blank=True)
+    supervision_consultant_license_no = serializers.CharField(required=False, allow_blank=True)
+
+    owners = serializers.JSONField(required=False)
+    project_name = serializers.CharField(required=False, allow_blank=True)
+    license_project_no = serializers.CharField(required=False, allow_blank=True)
+    license_project_name = serializers.CharField(required=False, allow_blank=True)
 
     class Meta:
         model  = BuildingLicense
         fields = [
             "id", "project",
+
             "license_type",
+
             # (المطور)
             "project_no", "project_name",
+
             # (الرخصة)
             "license_project_no", "license_project_name",
+
             # بيانات الرخصة
             "license_no",
             "issue_date", "last_issue_date", "expiry_date",
             "technical_decision_ref", "technical_decision_date", "license_notes",
             "building_license_file",
+
             # الأرض
             "city", "zone", "sector", "plot_no", "plot_address",
             "plot_area_sqm", "land_use", "land_use_sub", "land_plan_no",
-            # الأطراف
-            "consultant_name", "consultant_license_no",
+
+            # ========= الاستشاري =========
+            "consultant_same",
+            "design_consultant_name", "design_consultant_license_no",
+            "supervision_consultant_name", "supervision_consultant_license_no",
+
+            # ========= المقاول =========
             "contractor_name", "contractor_license_no",
-            # ملاك داخل الرخصة
+
+            # الملاك داخل الرخصة
             "owners",
-            # سنابشوت وملحقات
+
+            # snapshot
             "siteplan_snapshot", "owners_names",
+
             "created_at", "updated_at",
         ]
+
         read_only_fields = ["project", "siteplan_snapshot", "created_at", "updated_at"]
+
 
     def get_owners_names(self, obj):
         snap = obj.siteplan_snapshot or {}
@@ -420,7 +856,86 @@ class BuildingLicenseSerializer(serializers.ModelSerializer):
         return lic
 
     def update(self, instance, validated_data):
-        # لا نلمس snapshot في التحديث
+        # ✅ استعادة الملاك من حقل owners إلى Site Plan إذا لم تكن موجودة
+        owners_data = validated_data.get("owners")
+        if owners_data and isinstance(owners_data, list) and len(owners_data) > 0:
+            try:
+                siteplan = instance.project.siteplan
+                # ✅ التحقق من وجود ملاك في Site Plan
+                existing_owners_count = siteplan.owners.count()
+                
+                # ✅ إذا لم يكن هناك ملاك في Site Plan، نستعيدهم من الرخصة
+                if existing_owners_count == 0:
+                    from datetime import datetime
+                    from decimal import Decimal
+                    
+                    for owner_data in owners_data:
+                        # ✅ تحويل التواريخ من string إلى date objects
+                        id_issue_date = None
+                        id_expiry_date = None
+                        if owner_data.get("id_issue_date"):
+                            try:
+                                if isinstance(owner_data["id_issue_date"], str):
+                                    id_issue_date = datetime.fromisoformat(owner_data["id_issue_date"].replace('Z', '+00:00')).date()
+                                else:
+                                    id_issue_date = owner_data["id_issue_date"]
+                            except:
+                                pass
+                        
+                        if owner_data.get("id_expiry_date"):
+                            try:
+                                if isinstance(owner_data["id_expiry_date"], str):
+                                    id_expiry_date = datetime.fromisoformat(owner_data["id_expiry_date"].replace('Z', '+00:00')).date()
+                                else:
+                                    id_expiry_date = owner_data["id_expiry_date"]
+                            except:
+                                pass
+                        
+                        # ✅ تحويل share_percent إلى Decimal
+                        share_percent = owner_data.get("share_percent", "100.00")
+                        if isinstance(share_percent, str):
+                            try:
+                                share_percent = Decimal(share_percent)
+                            except:
+                                share_percent = Decimal("100.00")
+                        elif not isinstance(share_percent, Decimal):
+                            share_percent = Decimal(str(share_percent))
+                        
+                        # ✅ إنشاء المالك في Site Plan
+                        SitePlanOwner.objects.create(
+                            siteplan=siteplan,
+                            owner_name_ar=owner_data.get("owner_name_ar", ""),
+                            owner_name_en=owner_data.get("owner_name_en", ""),
+                            nationality=owner_data.get("nationality", ""),
+                            phone=owner_data.get("phone", ""),
+                            email=owner_data.get("email", ""),
+                            id_number=owner_data.get("id_number", ""),
+                            id_issue_date=id_issue_date,
+                            id_expiry_date=id_expiry_date,
+                            right_hold_type=owner_data.get("right_hold_type", "Ownership"),
+                            share_possession=owner_data.get("share_possession", ""),
+                            share_percent=share_percent,
+                        )
+                    
+                    # ✅ تحديث اسم المشروع بعد استعادة الملاك
+                    siteplan.refresh_from_db()
+                    # ✅ استخدام نفس الدالة من SitePlanSerializer (instance method)
+                    serializer_instance = SitePlanSerializer()
+                    serializer_instance._update_project_name_from_owners(siteplan)
+                    
+                    # ✅ تحديث snapshot في الرخصة
+                    instance.siteplan_snapshot = build_siteplan_snapshot(siteplan)
+                    instance.save(update_fields=["siteplan_snapshot"])
+                    
+            except SitePlan.DoesNotExist:
+                pass
+            except Exception as e:
+                # ✅ في حالة الخطأ، نكمل التحديث العادي
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error restoring owners from license to siteplan: {e}")
+        
+        # ✅ تحديث باقي الحقول
         return super().update(instance, validated_data)
 
 # =========================
@@ -428,8 +943,24 @@ class BuildingLicenseSerializer(serializers.ModelSerializer):
 # =========================
 class ContractSerializer(serializers.ModelSerializer):
     # الفرونت يرسل owners للعرض فقط → نتجاهلها في التخزين
-    owners = serializers.ListField(child=serializers.DictField(), write_only=True, required=False)
+    # ✅ استخدام allow_empty=True و allow_null=True للسماح بالقوائم الفارغة والقيم null
+    owners = serializers.ListField(
+        child=serializers.DictField(allow_empty=True), 
+        write_only=True, 
+        required=False,
+        allow_empty=True,
+        allow_null=True
+    )
     license_snapshot = serializers.JSONField(read_only=True)
+    
+    # الملفات
+    contract_file = serializers.FileField(required=False, allow_null=True)
+    contract_appendix_file = serializers.FileField(required=False, allow_null=True)
+    contract_explanation_file = serializers.FileField(required=False, allow_null=True)
+    start_order_file = serializers.FileField(required=False, allow_null=True)
+    
+    # ✅ Pattern لاستخراج owners من FormData (مثل SitePlanSerializer)
+    _owners_key_re = re.compile(r"^owners\[(\d+)\]\[(\w+)\]$")
 
     class Meta:
         model = Contract
@@ -444,18 +975,161 @@ class ContractSerializer(serializers.ModelSerializer):
             "contractor_name", "contractor_trade_license",
             # القيم والمدة
             "total_project_value", "total_bank_value", "total_owner_value", "project_duration_months",
+            "start_order_date", "project_end_date",
             # أتعاب (المالك)
             "owner_includes_consultant", "owner_fee_design_percent", "owner_fee_supervision_percent",
             "owner_fee_extra_mode", "owner_fee_extra_value",
             # أتعاب (البنك)
             "bank_includes_consultant", "bank_fee_design_percent", "bank_fee_supervision_percent",
             "bank_fee_extra_mode", "bank_fee_extra_value",
+            # الملفات
+            "contract_file", "contract_appendix_file", "contract_explanation_file", "start_order_file",
             # اللقطة
             "license_snapshot",
             "created_at", "updated_at",
         ]
-        # ✅ كانت خارج Meta وبالتالي الـ serializer كان يطلب project
         read_only_fields = ["project", "license_snapshot", "created_at", "updated_at"]
+
+    def to_internal_value(self, data):
+        """دعم owners كسلسلة JSON في multipart: owners='[{"owner_name_ar":"..."}, ...]'"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # ✅ استخراج owners من البيانات أولاً قبل أي تعديل
+        # ⚠️ لا نستخدم copy() لأن QueryDict قد يحتوي على ملفات غير قابلة للنسخ (BufferedRandom)
+        # بدلاً من ذلك، نستخدم data مباشرة ونزيل owners قبل استدعاء super()
+        
+        # ✅ استخراج owners من البيانات
+        owners_raw = None
+        if hasattr(self, 'initial_data') and self.initial_data:
+            owners_raw = self.initial_data.get("owners")
+        
+        # ✅ إذا لم نجد owners في initial_data، نحاول من data مباشرة
+        if owners_raw is None and hasattr(data, 'get'):
+            owners_raw = data.get("owners")
+        
+        # ✅ محاولة استخراج owners من FormData (owners[0][...]) إذا لم تكن موجودة كـ JSON string
+        if owners_raw is None:
+            req = self.context.get("request")
+            if req:
+                try:
+                    # ✅ محاولة من req._request.POST (البيانات النصية من FormData)
+                    post_data = None
+                    if hasattr(req, '_request') and hasattr(req._request, 'POST'):
+                        post_data = req._request.POST
+                    elif hasattr(req, 'POST'):
+                        post_data = req.POST
+                    
+                    if post_data and hasattr(post_data, 'get'):
+                        buckets = {}
+                        for k in post_data.keys():
+                            k_str = str(k)
+                            m = self._owners_key_re.match(k_str)
+                            if m:
+                                idx = int(m.group(1))
+                                key = m.group(2)
+                                buckets.setdefault(idx, {})[key] = post_data.get(k)
+                        
+                        if buckets:
+                            owners_raw = [buckets[i] for i in sorted(buckets.keys())]
+                            logger.info(f"ContractSerializer: Extracted {len(owners_raw)} owners from FormData keys")
+                except Exception as e:
+                    logger.warning(f"ContractSerializer: Error extracting owners from FormData: {e}")
+        
+        # ✅ معالجة owners وتحويلها إلى list من dictionaries
+        owners_parsed = []
+        if owners_raw is not None:
+            if isinstance(owners_raw, str):
+                # ✅ إذا كانت string فارغة، نستخدم قائمة فارغة
+                if owners_raw.strip() == "":
+                    owners_parsed = []
+                else:
+                    try:
+                        parsed = json.loads(owners_raw)
+                        if isinstance(parsed, list):
+                            owners_parsed = parsed
+                        else:
+                            owners_parsed = []
+                    except (json.JSONDecodeError, ValueError, TypeError) as e:
+                        logger.warning(f"ContractSerializer: Failed to parse owners JSON: {e}")
+                        owners_parsed = []
+            elif isinstance(owners_raw, list):
+                owners_parsed = owners_raw
+            else:
+                owners_parsed = []
+        
+        # ✅ إزالة owners من data قبل استدعاء super() لتجنب أخطاء التحقق من النوع
+        # ⚠️ نستخدم data مباشرة (بدون نسخ) لأن QueryDict يحتوي على ملفات غير قابلة للنسخ
+        owners_removed = False
+        owners_value = None
+        try:
+            from django.http import QueryDict
+            if isinstance(data, QueryDict):
+                # ✅ حفظ قيمة owners ثم إزالتها
+                if "owners" in data:
+                    owners_value = data.get("owners")
+                    # ✅ إزالة owners من QueryDict
+                    data._mutable = True
+                    data.pop("owners", None)
+                    owners_removed = True
+            elif isinstance(data, dict):
+                owners_value = data.pop("owners", None)
+                owners_removed = True
+            elif hasattr(data, 'pop'):
+                try:
+                    owners_value = data.pop("owners", None)
+                    owners_removed = True
+                except:
+                    pass
+        except Exception as e:
+            logger.warning(f"Error removing owners from data: {e}")
+        
+        # ✅ استدعاء super() بدون owners
+        ret = super().to_internal_value(data)
+        
+        # ✅ إعادة owners إلى data إذا كنا قد أزلناها (للمحافظة على البيانات الأصلية)
+        if owners_removed and owners_value is not None:
+            try:
+                from django.http import QueryDict
+                if isinstance(data, QueryDict):
+                    data._mutable = True
+                    data.appendlist("owners", owners_value)
+                elif isinstance(data, dict):
+                    data["owners"] = owners_value
+            except:
+                pass
+        
+        # ✅ إضافة owners بعد التحقق (كـ list من dictionaries)
+        ret["owners"] = owners_parsed if isinstance(owners_parsed, list) else []
+        
+        # ✅ التأكد من أن owners هي list دائماً
+        if "owners" in ret and not isinstance(ret["owners"], list):
+            ret["owners"] = []
+        
+        # ✅ معالجة الحقول الرقمية والمنطقية التي قد تأتي كسلسلة من FormData
+        numeric_fields = [
+            "total_project_value", "total_bank_value", "total_owner_value",
+            "project_duration_months", "owner_fee_design_percent", "owner_fee_supervision_percent",
+            "owner_fee_extra_value", "bank_fee_design_percent", "bank_fee_supervision_percent",
+            "bank_fee_extra_value"
+        ]
+        for field in numeric_fields:
+            if field in ret and isinstance(ret.get(field), str):
+                try:
+                    val = ret[field]
+                    if val.strip() == "":
+                        ret[field] = None
+                    else:
+                        ret[field] = float(val)
+                except (ValueError, TypeError, AttributeError):
+                    pass
+        
+        boolean_fields = ["owner_includes_consultant", "bank_includes_consultant"]
+        for field in boolean_fields:
+            if field in ret and isinstance(ret.get(field), str):
+                ret[field] = ret[field].lower() in ("true", "1", "yes", "on")
+        
+        return ret
 
     def validate(self, attrs):
         total = attrs.get("total_project_value") or getattr(self.instance, "total_project_value", None)
@@ -470,16 +1144,71 @@ class ContractSerializer(serializers.ModelSerializer):
         try:
             lic = contract.project.license
         except BuildingLicense.DoesNotExist:
+            # ✅ إذا لم تكن الرخصة موجودة، نضع snapshot فارغ
+            contract.license_snapshot = {}
+            contract.save(update_fields=["license_snapshot"])
             return
-        contract.license_snapshot = build_license_snapshot(lic)
-        contract.save(update_fields=["license_snapshot"])
+        try:
+            contract.license_snapshot = build_license_snapshot(lic)
+            contract.save(update_fields=["license_snapshot"])
+        except Exception as e:
+            # ✅ في حالة أي خطأ، نضع snapshot فارغ بدلاً من إيقاف العملية
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error building license snapshot: {e}", exc_info=True)
+            contract.license_snapshot = {}
+            contract.save(update_fields=["license_snapshot"])
 
     def create(self, validated_data):
         validated_data.pop("owners", None)  # عرض فقط
-        obj = Contract.objects.create(**validated_data)
-        self._fill_snapshot(obj)
-        return obj
+        try:
+            obj = Contract.objects.create(**validated_data)
+            # ✅ محاولة ملء snapshot - إذا فشلت، نكمل بدون snapshot
+            try:
+                self._fill_snapshot(obj)
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error filling snapshot in create: {e}", exc_info=True)
+            return obj
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error creating contract: {e}", exc_info=True)
+            raise
 
     def update(self, instance, validated_data):
         validated_data.pop("owners", None)
-        return super().update(instance, validated_data)
+        try:
+            updated = super().update(instance, validated_data)
+            # ✅ محاولة تحديث snapshot - إذا فشلت، نكمل بدون snapshot
+            try:
+                self._fill_snapshot(updated)
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error filling snapshot in update: {e}", exc_info=True)
+            return updated
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error updating contract: {e}", exc_info=True)
+            raise
+
+
+# =========================
+# Awarding
+# =========================
+class AwardingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Awarding
+        fields = [
+            "id", "project",
+            "award_date",
+            "consultant_registration_number",
+            "project_number",
+            "contractor_registration_number",
+            "awarding_file",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["project", "created_at", "updated_at"]

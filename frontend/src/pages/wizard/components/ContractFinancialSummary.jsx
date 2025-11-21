@@ -1,34 +1,26 @@
-// src/pages/wizard/components/ContractFinancialSummary.jsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { api } from "../../../services/api";
 import InfoTip from "./InfoTip";
-
-/* ================= Helpers ================= */
-const n = (v) => {
-  if (v === undefined || v === null || v === "" || Number.isNaN(v)) return 0;
-  const x = parseFloat(String(v).replace(/[^\d.+-]/g, ""));
-  return Number.isFinite(x) ? x : 0;
-};
-const round = (v) => Math.round(n(v));
-const fmtAED = (v) => `AED ${round(n(v)).toLocaleString("en-US")}`; // أرقام إنجليزي
-
-// استخراج أتعاب الاستشاري عندما تكون نسبة الاستشاري مشمولة ضمن المبلغ
-const feeInclusive = (gross, pct) => {
-  const g = n(gross), r = n(pct);
-  if (g <= 0 || r <= 0) return { fee: 0, net: g };
-  const fee = round(g * (r / (100 + r)));
-  return { fee, net: g - fee };
-};
+import { formatMoney } from "../../../utils/formatters";
+import { n, round, feeInclusive } from "../../../utils/contractFinancial";
 
 /* =================== Main =================== */
 export default function ContractFinancialSummary({ projectId }) {
+  const { t, i18n } = useTranslation();
+  const isAR = /^ar\b/i.test(i18n.language || "");
   const [contract, setContract] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // تحميل العقد
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
+    setError(null);
     api
       .get(`projects/${projectId}/contract/`)
       .then(({ data }) => {
@@ -37,13 +29,13 @@ export default function ContractFinancialSummary({ projectId }) {
         else setContract(null);
       })
       .catch((e) => {
-        console.error("Contract fetch error", e);
+        setError(e?.response?.data || e?.message || t("contract_load_error"));
         setContract(null);
       })
       .finally(() => setLoading(false));
-  }, [projectId]);
+  }, [projectId, t]);
 
-  // كل الحسابات تتم هنا بشكل آمن؛ لو حصل خطأ نرجّع error بدل ما نغيّر state أثناء الريندر
+  // كل الحسابات تتم هنا بشكل آمن
   const computed = useMemo(() => {
     try {
       if (!contract) return { error: null, data: null };
@@ -58,7 +50,7 @@ export default function ContractFinancialSummary({ projectId }) {
 
       // نسب الاستشاري
       const ownerIncludes = c.owner_includes_consultant === true || c.owner_includes_consultant === "yes";
-      const bankIncludes  = c.bank_includes_consultant  === true || c.bank_includes_consultant  === "yes";
+      const bankIncludes = c.bank_includes_consultant === true || c.bank_includes_consultant === "yes";
 
       const ownerPct = ownerIncludes
         ? n(c.owner_fee_design_percent) + n(c.owner_fee_supervision_percent) +
@@ -76,40 +68,85 @@ export default function ContractFinancialSummary({ projectId }) {
           : ownerPct || bankPct || 0;
 
       // تفكيك الأتعاب من الإجماليات
-      const total  = feeInclusive(grossTotal, totalPct);
-      const bank   = feeInclusive(grossBank,  bankPct  || totalPct);
-      const owner  = feeInclusive(grossOwner, ownerPct || totalPct);
+      const total = feeInclusive(grossTotal, totalPct);
+      const bank = feeInclusive(grossBank, bankPct || totalPct);
+      const owner = feeInclusive(grossOwner, ownerPct || totalPct);
 
       // دوال العرض
-      const A   = (v) => fmtAED(v);
+      const A = (v) => formatMoney(round(n(v)));
       const vat = (v) => round(n(v) * 0.05);
-      const inc = (v)  => round(n(v) + vat(v));
+      const inc = (v) => round(n(v) + vat(v));
 
       return {
         error: null,
         data: {
-          c, grossTotal, grossBank, grossOwner,
-          ownerPct, bankPct, totalPct,
-          total, bank, owner,
-          A, vat, inc,
-        }
+          c,
+          grossTotal,
+          grossBank,
+          grossOwner,
+          ownerPct,
+          bankPct,
+          totalPct,
+          total,
+          bank,
+          owner,
+          A,
+          vat,
+          inc,
+        },
       };
     } catch (e) {
-      console.error("Summary compute error:", e, { contract });
       return { error: e, data: null };
     }
   }, [contract]);
 
-  if (loading) return <div style={{ padding: 20 }}>⏳ جاري تحميل بيانات العقد...</div>;
-  if (!contract) return <div style={{ padding: 20 }}>⚠️ لا توجد بيانات عقد متاحة.</div>;
+  if (loading) {
+    return (
+      <div className="card text-center" style={{ padding: 20 }}>
+        {t("contract_loading")}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="card alert error" style={{ direction: isAR ? "rtl" : "ltr" }}>
+        <div className="fw-700 mb-12">
+          {t("contract_load_error")}
+        </div>
+        <div className="pre-wrap mono" style={{ background: "var(--error-bg)", padding: 10, borderRadius: 6, border: "1px solid var(--error-ink)" }}>
+          {typeof error === "string" ? error : JSON.stringify(error, null, 2)}
+        </div>
+      </div>
+    );
+  }
+
+  if (!contract) {
+    return (
+      <div className="card text-center" style={{ padding: 20 }}>
+        {t("contract_no_data")}
+      </div>
+    );
+  }
+
   if (computed.error) {
     return (
-      <div className="card" style={{ padding: 16, direction: "rtl", color: "#b00020" }}>
-        <div style={{ fontWeight: 700, marginBottom: 8 }}>حدث خطأ أثناء عرض الملخص.</div>
-        <div style={{ whiteSpace: "pre-wrap", fontFamily: "monospace", background: "#fff7f7", padding: 10, borderRadius: 6, border: "1px solid #ffd0d0" }}>
-          {`Error: ${computed.error?.message || computed.error}\n\nContract payload:\n` +
+      <div className="card alert error" style={{ direction: isAR ? "rtl" : "ltr" }}>
+        <div className="fw-700 mb-12">
+          {t("contract_summary_error")}
+        </div>
+        <div className="pre-wrap mono" style={{ background: "var(--error-bg)", padding: 10, borderRadius: 6, border: "1px solid var(--error-ink)" }}>
+          {`Error: ${computed.error?.message || String(computed.error)}\n\nContract payload:\n` +
             JSON.stringify(contract, null, 2)}
         </div>
+      </div>
+    );
+  }
+
+  if (!computed.data) {
+    return (
+      <div className="card text-center" style={{ padding: 20 }}>
+        {t("contract_insufficient_data")}
       </div>
     );
   }
@@ -117,161 +154,314 @@ export default function ContractFinancialSummary({ projectId }) {
   // تفكيك القيم المحسوبة
   const { grossTotal, grossBank, grossOwner, ownerPct, bankPct, totalPct, total, bank, owner, A, vat, inc } = computed.data;
 
-  /* ===== ستايل شبيه بالإكسيل ===== */
+  /* ===== ستايل متناسق مع النظام ===== */
   const S = {
-    y: {
-      background: "#ffe400",
+    sectionTitle: {
+      background: "var(--primary)",
+      color: "white",
       fontWeight: 700,
-      border: "1px solid #cfcfcf",
-      padding: "8px 10px",
-      direction: "rtl",
+      padding: "14px 18px",
+      borderRadius: "8px 8px 0 0",
+      fontSize: "18px",
+      fontFamily: '"Times New Roman", Times, serif',
+      textAlign: isAR ? "right" : "left",
+      direction: isAR ? "rtl" : "ltr",
     },
     th: {
-      background: "#f7f7f7",
-      border: "1px solid #dcdcdc",
-      padding: "10px 8px",
-      textAlign: "center",
+      background: "var(--surface-2)",
+      border: "1px solid var(--border)",
+      padding: "14px 18px",
+      textAlign: isAR ? "right" : "left",
+      fontWeight: 600,
+      fontSize: "16px",
+      fontFamily: '"Times New Roman", Times, serif',
+      color: "var(--ink)",
     },
     td: {
-      border: "1px solid #e4e4e4",
-      padding: "8px 8px",
-      verticalAlign: "top",
+      border: "1px solid var(--border)",
+      padding: "14px 18px",
+      verticalAlign: "middle",
+      background: "var(--surface)",
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "16px",
+    },
+    tdValue: {
+      border: "1px solid var(--border)",
+      padding: "14px 18px",
+      textAlign: isAR ? "left" : "right",
+      verticalAlign: "middle",
+      background: "var(--surface)",
+      fontWeight: 500,
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "17px",
+      color: "var(--ink)",
+    },
+    tdTotal: {
+      border: "1px solid var(--border)",
+      padding: "14px 18px",
+      textAlign: isAR ? "left" : "right",
+      verticalAlign: "middle",
+      background: "var(--primary-50)",
+      fontWeight: 700,
+      fontFamily: '"Times New Roman", Times, serif',
+      fontSize: "18px",
+      color: "var(--primary-700)",
     },
     table: {
       width: "100%",
       borderCollapse: "collapse",
       tableLayout: "fixed",
-      direction: "rtl",
+      direction: isAR ? "rtl" : "ltr",
+      marginBottom: 0,
     },
-    gap: { height: 14 },
+    gap: { height: "16px" },
+    tableWrapper: {
+      display: "flex",
+      flexDirection: "column",
+      height: "100%",
+    },
+    tablesGrid: {
+      display: "grid",
+      gridTemplateColumns: "repeat(3, 1fr)",
+      gap: "16px",
+      marginBottom: "16px",
+      alignItems: "stretch",
+    },
+    fullWidthTable: {
+      width: "100%",
+    },
+    emptyRow: {
+      height: "8px",
+      border: "none",
+      background: "transparent",
+    },
   };
 
   /* ===== الملاحظات ===== */
   const notes = {
-    total_contract:
-      "المبلغ الإجمالي للتعاقد، وهو مجموع أعمال المقاول مضافًا إليها أتعاب الاستشاري إن وُجدت.",
-    fee_total:
-      "إجمالي أتعاب الاستشاري، المستقطعة من القيمة الإجمالية للعقد.",
-    net_total:
-      "القيمة الصافية لأعمال المقاول بعد خصم أتعاب الاستشاري.",
-    bank_total:
-      "إجمالي مبلغ تمويل البنك (يشمل أتعاب الاستشاري إن وُجدت).",
-    bank_fee: "أتعاب الاستشاري المستقطعة من تمويل البنك.",
-    bank_net: "القيمة الفعلية لأعمال المقاول الممولة من البنك.",
-    owner_total: "إجمالي مبلغ تمويل المالك (يشمل أتعاب الاستشاري إن وُجدت).",
-    owner_fee: "أتعاب الاستشاري المستقطعة من تمويل المالك.",
-    owner_net: "القيمة الفعلية لأعمال المقاول الممولة من المالك.",
+    total_contract: t("contract_note_total_contract"),
+    fee_total: t("contract_note_fee_total"),
+    net_total: t("contract_note_net_total"),
+    bank_total: t("contract_note_bank_total"),
+    bank_fee: t("contract_note_bank_fee"),
+    bank_net: t("contract_note_bank_net"),
+    owner_total: t("contract_note_owner_total"),
+    owner_fee: t("contract_note_owner_fee"),
+    owner_net: t("contract_note_owner_net"),
   };
 
   /* ===== صفوف الجداول ===== */
-  const RowAmount = (label, value, noteKey, percent = null) => (
+  const RowAmount = (label, value, noteKey, percent = null, isTotal = false, isPercentageRow = false) => (
     <tr key={label}>
       <td style={S.td}>
-        {label}
-        <InfoTip text={notes[noteKey]} />
-        {percent !== null && (
-          <span style={{ color: "#666", fontSize: 13, marginInlineStart: 8 }}>
-            ({percent}%)
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", fontFamily: '"Times New Roman", Times, serif' }}>
+          <span style={{ fontSize: "16px" }}>{label}</span>
+          {percent !== null && percent > 0 && (
+            <span style={{ 
+              color: "var(--muted)", 
+              fontSize: "14px", 
+              fontWeight: 400,
+              marginInlineStart: "4px",
+              fontFamily: '"Times New Roman", Times, serif'
+            }}>
+              ({percent}%)
+            </span>
+          )}
+         <InfoTip text={notes[noteKey]} />
+        </div>
+      </td>
+      <td style={isTotal ? S.tdTotal : S.tdValue}>
+        {isPercentageRow ? (
+          <span style={{ 
+            fontSize: "15px", 
+            color: "var(--muted)",
+            fontFamily: '"Times New Roman", Times, serif'
+          }}>
+            {percent !== null && percent > 0 ? `${percent}%` : "0%"}
           </span>
+        ) : (
+          A(value)
         )}
       </td>
-      <td style={{ ...S.td, textAlign: "center" }}>{A(value)}</td>
     </tr>
   );
 
-  const RowVAT = (label, amt) => (
+  const RowVAT = (label, amt, isTotal = false) => (
     <tr key={label}>
-      <td style={S.td}>{label}</td>
-      <td style={{ ...S.td, textAlign: "center" }}>{A(amt)}</td>
-      <td style={{ ...S.td, textAlign: "center" }}>{A(vat(amt))}</td>
-      <td style={{ ...S.td, textAlign: "center" }}>{A(inc(amt))}</td>
+      <td style={{ ...S.td, fontSize: "16px", fontFamily: '"Times New Roman", Times, serif' }}>{label}</td>
+      <td style={isTotal ? S.tdTotal : S.tdValue}>{A(amt)}</td>
+      <td style={isTotal ? S.tdTotal : S.tdValue}>{A(vat(amt))}</td>
+      <td style={isTotal ? S.tdTotal : S.tdValue}>{A(inc(amt))}</td>
     </tr>
   );
 
   return (
-    <div className="card" style={{ overflowX: "auto", padding: 0 }}>
+      <div className="card" style={{ overflowX: "auto" }}>
+      {/* أول 3 جداول في صف واحد */}
+      <div style={S.tablesGrid}>
       {/* ① إجمالي مبالغ العقد */}
-      <div style={S.y}>① إجمالي مبالغ العقد (أعمال المقاولة) / Total Contract Amounts</div>
-      <table style={S.table}>
+        <div style={S.tableWrapper}>
+          <div style={S.sectionTitle}>
+        {t("contract_total_title")}
+      </div>
+      <table style={{ ...S.table, flex: 1 }}>
         <thead>
           <tr>
-            <th style={S.th}>البيان</th>
-            <th style={S.th}>القيمة (AED) غير شاملة الضريبة</th>
+                <th style={{ ...S.th, width: "60%" }}>{t("contract_description")}</th>
+                <th style={{ ...S.th, width: "40%" }}>{t("contract_value_excl_vat")}</th>
           </tr>
         </thead>
         <tbody>
-          {RowAmount("إجمالي مبلغ المقاولة التعاقدي", grossTotal, "total_contract")}
-          {RowAmount("نسبة الاستشاري", 0, "fee_total", `${totalPct || 0}`)}
-          {RowAmount("إجمالي مبلغ أتعاب الاستشاري", total.fee, "fee_total")}
-          {RowAmount("إجمالي مبلغ المقاولة الفعلية", total.net, "net_total")}
+          {RowAmount(
+            t("contract_total_contract_amount"),
+            grossTotal,
+                "total_contract",
+                null,
+                true
+          )}
+          {RowAmount(
+            t("contract_consultant_percentage"),
+            0,
+            "fee_total",
+                totalPct || 0,
+                false,
+                true
+          )}
+          {RowAmount(
+            t("contract_total_consultant_fees"),
+            total.fee,
+            "fee_total"
+          )}
+          {RowAmount(
+            t("contract_total_actual_contractor"),
+            total.net,
+                "net_total",
+                null,
+                true
+          )}
         </tbody>
       </table>
-
-      <div style={S.gap} />
+        </div>
 
       {/* ② بنك */}
-      <div style={S.y}>② تفصيل حصة تمويل البنك / Bank Share Details</div>
-      <table style={S.table}>
+        <div style={S.tableWrapper}>
+          <div style={S.sectionTitle}>
+        {t("contract_bank_share_title")}
+      </div>
+      <table style={{ ...S.table, flex: 1 }}>
         <thead>
           <tr>
-            <th style={S.th}>البيان</th>
-            <th style={S.th}>القيمة (AED)</th>
+                <th style={{ ...S.th, width: "60%" }}>{t("contract_description")}</th>
+                <th style={{ ...S.th, width: "40%" }}>{t("contract_value_aed")}</th>
           </tr>
         </thead>
         <tbody>
-          {RowAmount("إجمالي مبلغ حصة تمويل البنك", grossBank, "bank_total")}
-          {RowAmount("نسبة الاستشاري", 0, "bank_fee", `${bankPct || totalPct || 0}`)}
-          {RowAmount("أتعاب الاستشاري ضمن إجمالي حصة تمويل البنك", bank.fee, "bank_fee")}
-          {RowAmount("مبلغ المقاولة الفعلية من حصة تمويل البنك", bank.net, "bank_net")}
+          {RowAmount(
+            t("contract_total_bank_financing"),
+            grossBank,
+                "bank_total",
+                null,
+                true
+          )}
+          {RowAmount(
+            t("contract_consultant_percentage"),
+            0,
+            "bank_fee",
+                bankPct || totalPct || 0,
+                false,
+                true
+          )}
+          {RowAmount(
+            t("contract_consultant_fees_bank"),
+            bank.fee,
+            "bank_fee"
+          )}
+          {RowAmount(
+            t("contract_contractor_from_bank"),
+            bank.net,
+                "bank_net",
+                null,
+                true
+          )}
         </tbody>
       </table>
-
-      <div style={S.gap} />
+        </div>
 
       {/* ③ مالك */}
-      <div style={S.y}>③ تفصيل حصة تمويل المالك / Owner Share Details</div>
-      <table style={S.table}>
+        <div style={S.tableWrapper}>
+          <div style={S.sectionTitle}>
+        {t("contract_owner_share_title")}
+      </div>
+      <table style={{ ...S.table, flex: 1 }}>
         <thead>
           <tr>
-            <th style={S.th}>البيان</th>
-            <th style={S.th}>القيمة (AED)</th>
+                <th style={{ ...S.th, width: "60%" }}>{t("contract_description")}</th>
+                <th style={{ ...S.th, width: "40%" }}>{t("contract_value_aed")}</th>
           </tr>
         </thead>
         <tbody>
-          {RowAmount("إجمالي مبلغ حصة تمويل المالك", grossOwner, "owner_total")}
-          {RowAmount("نسبة الاستشاري", 0, "owner_fee", `${ownerPct || totalPct || 0}`)}
-          {RowAmount("أتعاب الاستشاري ضمن إجمالي حصة تمويل المالك", owner.fee, "owner_fee")}
-          {RowAmount("مبلغ المقاولة الفعلية من حصة تمويل المالك", owner.net, "owner_net")}
+          {RowAmount(
+            t("contract_total_owner_financing"),
+            grossOwner,
+                "owner_total",
+                null,
+                true
+          )}
+              <tr style={S.emptyRow}>
+                <td colSpan="2"></td>
+              </tr>
+          {RowAmount(
+            t("contract_consultant_percentage"),
+            0,
+            "owner_fee",
+                ownerPct || totalPct || 0,
+                false,
+                true
+          )}
+          {RowAmount(
+            t("contract_consultant_fees_owner"),
+            owner.fee,
+            "owner_fee"
+          )}
+          {RowAmount(
+            t("contract_contractor_from_owner"),
+            owner.net,
+                "owner_net",
+                null,
+                true
+          )}
         </tbody>
       </table>
+        </div>
+      </div>
 
-      <div style={S.gap} />
-
-      {/* التفاصيل المالية شامل الضريبة */}
-      <div style={S.y}>
-        📊 التفاصيل المالية لعقد المشروع شامل الضريبة / Contract Financial Details
+      {/* التفاصيل المالية شامل الضريبة - في سطر منفصل */}
+      <div style={S.fullWidthTable}>
+        <div style={S.sectionTitle}>
+        {t("contract_vat_title")}
       </div>
       <table style={S.table}>
         <thead>
           <tr>
-            <th style={S.th}>البيان</th>
-            <th style={S.th}>القيمة (AED) غير شاملة الضريبة</th>
-            <th style={S.th}>قيمة الضريبة 5%</th>
-            <th style={S.th}>الإجمالي شامل الضريبة</th>
+            <th style={{ ...S.th, width: "40%" }}>{t("contract_description")}</th>
+            <th style={{ ...S.th, width: "20%" }}>{t("contract_value_excl_vat")}</th>
+            <th style={{ ...S.th, width: "20%" }}>{t("contract_vat_5")}</th>
+            <th style={{ ...S.th, width: "20%" }}>{t("contract_total_incl_vat")}</th>
           </tr>
         </thead>
         <tbody>
-          {RowVAT("إجمالي مبلغ حصة تمويل البنك", grossBank)}
-          {RowVAT("إجمالي مبلغ حصة تمويل المالك", grossOwner)}
-          {RowVAT("إجمالي مبلغ المقاولة التعاقدي", grossTotal)}
-          {RowVAT("أتعاب الاستشاري ضمن إجمالي حصة تمويل البنك", bank.fee)}
-          {RowVAT("أتعاب الاستشاري ضمن إجمالي حصة تمويل المالك", owner.fee)}
-          {RowVAT("إجمالي مبلغ أتعاب الاستشاري", total.fee)}
-          {RowVAT("مبلغ المقاولة الفعلية من حصة تمويل البنك", bank.net)}
-          {RowVAT("مبلغ المقاولة الفعلية من حصة تمويل المالك", owner.net)}
-          {RowVAT("إجمالي مبلغ المقاولة الفعلية", total.net)}
+          {RowVAT(t("contract_total_bank_financing"), grossBank)}
+          {RowVAT(t("contract_total_owner_financing"), grossOwner)}
+          {RowVAT(t("contract_total_contract_amount"), grossTotal, true)}
+          {RowVAT(t("contract_consultant_fees_bank"), bank.fee)}
+          {RowVAT(t("contract_consultant_fees_owner"), owner.fee)}
+          {RowVAT(t("contract_total_consultant_fees"), total.fee, true)}
+          {RowVAT(t("contract_contractor_from_bank"), bank.net)}
+          {RowVAT(t("contract_contractor_from_owner"), owner.net)}
+          {RowVAT(t("contract_total_actual_contractor"), total.net, true)}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

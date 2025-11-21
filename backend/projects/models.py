@@ -44,20 +44,56 @@ class Project(TimeStampedModel):
         default='draft',
     )
 
-    # ✨ جديد: الكود الداخلي للمشروع — يبدأ بـ M ثم أرقام فردية فقط
+    # الكود الداخلي للمشروع — يبدأ بـ M ثم أرقام، مع شرط أن يكون آخر رقم فردياً
     internal_code = models.CharField(
         max_length=40,
         blank=True,
         db_index=True,
         validators=[RegexValidator(
-            regex=r"^M[13579]*$",
-            message="Internal code must start with 'M' and contain odd digits only (1,3,5,7,9)."
+            # M ثم أرقام، وآخر رقم فردي (يسمح بوجود أرقام زوجية في المنتصف)
+            regex=r"^M[0-9]*[13579]$",
+            message="Internal code must start with 'M' and end with an odd digit (1,3,5,7,9)."
         )],
-        help_text="Starts with M, followed by odd digits only (1,3,5,7,9).",
+        help_text="Starts with M, digits allowed, last digit must be odd (1,3,5,7,9).",
     )
 
     def __str__(self):
         return self.name or f"Project #{self.id}"
+
+    # Properties للـ serializer
+    @property
+    def has_siteplan(self):
+        """تحقق من وجود SitePlan للمشروع"""
+        # ✅ التحقق من وجود related object
+        if not hasattr(self, '_state') or self._state.adding or not self.pk:
+            # ✅ إذا كان المشروع جديداً (لم يُحفظ بعد)، نرجع False
+            return False
+        # ✅ استخدام query مباشر لتجنب DoesNotExist exception
+        return SitePlan.objects.filter(project_id=self.pk).exists()
+
+    @property
+    def has_license(self):
+        """تحقق من وجود BuildingLicense للمشروع"""
+        # ✅ التحقق من وجود related object
+        if not hasattr(self, '_state') or self._state.adding or not self.pk:
+            # ✅ إذا كان المشروع جديداً (لم يُحفظ بعد)، نرجع False
+            return False
+        # ✅ استخدام query مباشر لتجنب DoesNotExist exception
+        return BuildingLicense.objects.filter(project_id=self.pk).exists()
+
+    @property
+    def completion(self):
+        """نسبة إكمال المشروع بناءً على الخطوات المكتملة"""
+        if not hasattr(self, '_state') or self._state.adding or not self.pk:
+            return 0
+        completed = 0
+        if self.has_siteplan:
+            completed += 1
+        if self.has_license:
+            completed += 1
+        if Contract.objects.filter(project_id=self.pk).exists():
+            completed += 1
+        return int((completed / 3) * 100) if completed > 0 else 0
 
 
 # ====== مخطط الأرض ======
@@ -126,11 +162,11 @@ class BuildingLicense(TimeStampedModel):
 
     # (المطور) سنابشوت من الـ SitePlan
     project_no = models.CharField(max_length=120, blank=True)
-    project_name = models.CharField(max_length=200, blank=True)  # ✨ جديد
+    project_name = models.CharField(max_length=200, blank=True)
 
-    # (الرخصة) الحقلان الجداد
-    license_project_no = models.CharField(max_length=120, blank=True)     # ✨ جديد
-    license_project_name = models.CharField(max_length=200, blank=True)   # ✨ جديد
+    # (الرخصة) الحقلان الجديدان
+    license_project_no = models.CharField(max_length=120, blank=True)
+    license_project_name = models.CharField(max_length=200, blank=True)
 
     license_no = models.CharField(max_length=120, blank=True)
     issue_date = models.DateField(null=True, blank=True)
@@ -153,13 +189,22 @@ class BuildingLicense(TimeStampedModel):
     land_plan_no = models.CharField(max_length=120, blank=True)
 
     # Parties
-    consultant_name = models.CharField(max_length=200, blank=True)
-    consultant_license_no = models.CharField(max_length=120, blank=True)
+    # ===== استشاري التصميم / الإشراف =====
+    consultant_same = models.BooleanField(default=True)
+
+    # استشاري التصميم
+    design_consultant_name = models.CharField(max_length=200, blank=True)
+    design_consultant_license_no = models.CharField(max_length=120, blank=True)
+
+    # استشاري الإشراف
+    supervision_consultant_name = models.CharField(max_length=200, blank=True)
+    supervision_consultant_license_no = models.CharField(max_length=120, blank=True)
+
     contractor_name = models.CharField(max_length=200, blank=True)
     contractor_license_no = models.CharField(max_length=120, blank=True)
 
     # Owners snapshot داخل الرخصة
-    owners = models.JSONField(default=list, blank=True)  # ✨ جديد
+    owners = models.JSONField(default=list, blank=True)
 
     # Read-only snapshot من SitePlan
     siteplan_snapshot = models.JSONField(default=dict, editable=False)
@@ -184,6 +229,9 @@ class Contract(TimeStampedModel):
     total_owner_value = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     project_duration_months = models.PositiveIntegerField(default=0)
 
+    start_order_date = models.DateField(null=True, blank=True)
+    project_end_date = models.DateField(null=True, blank=True)
+
     # Owner consultant fees
     owner_includes_consultant = models.BooleanField(default=False)
     owner_fee_design_percent = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
@@ -198,8 +246,38 @@ class Contract(TimeStampedModel):
     bank_fee_extra_mode = models.CharField(max_length=40, blank=True)
     bank_fee_extra_value = models.DecimalField(max_digits=7, decimal_places=2, null=True, blank=True)
 
-    # Read-only snapshot من License
+    # Snapshot
     license_snapshot = models.JSONField(default=dict, editable=False)
+
+    # الملفات
+    contract_file = models.FileField(upload_to="contracts/main/", null=True, blank=True)
+    contract_appendix_file = models.FileField(upload_to="contracts/appendix/", null=True, blank=True)
+    contract_explanation_file = models.FileField(upload_to="contracts/explanations/", null=True, blank=True)
+    start_order_file = models.FileField(upload_to="contracts/start_orders/", null=True, blank=True)
 
     def __str__(self):
         return f"Contract for {self.project.name or self.project_id}"
+
+
+
+# ====== أمر الترسية ======
+class Awarding(TimeStampedModel):
+    project = models.OneToOneField(Project, on_delete=models.CASCADE, related_name="awarding")
+
+    # تاريخ أمر الترسية
+    award_date = models.DateField(null=True, blank=True)
+    
+    # رقم تسجيل الاستشاري (VR-xxxx)
+    consultant_registration_number = models.CharField(max_length=120, blank=True)
+    
+    # رقم المشروع
+    project_number = models.CharField(max_length=120, blank=True)
+    
+    # رقم تسجيل المقاول (VR-xxxx)
+    contractor_registration_number = models.CharField(max_length=120, blank=True)
+    
+    # ملف أمر الترسية
+    awarding_file = models.FileField(upload_to="awarding/", null=True, blank=True)
+
+    def __str__(self):
+        return f"Awarding for {self.project.name or self.project_id}"

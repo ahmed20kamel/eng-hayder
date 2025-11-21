@@ -1,17 +1,30 @@
-import { useMemo, useEffect, useState } from "react";
+import { useMemo, useEffect, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import WizardShell from "../components/WizardShell";
 import StepActions from "../components/StepActions";
 import InfoTip from "../components/InfoTip";
+import Dialog from "../../../components/Dialog";
+import Chips from "../../../components/Chips";
+import Button from "../../../components/Button";
+import Field from "../../../components/fields/Field";
 import { api } from "../../../services/api";
+import { PROJECT_TYPES, VILLA_CATEGORIES, CONTRACT_TYPES } from "../../../utils/constants";
+import { formatInternalCode, isLastDigitOdd, toDigits } from "../../../utils/internalCodeFormatter";
 
-export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isView }) {
+export default function ProjectSetupStep({
+  value,
+  onChange,
+  onNext,
+  onPrev,
+  isView,
+  onSaved, // اختياري: يُستدعى بعد الحفظ الناجح (مثلاً لإعادة تحميل المشروع في صفحة العرض)
+}) {
   const { t, i18n } = useTranslation();
   const lang = i18n.language;
+  const isAR = lang === "ar";
   const { projectId } = useParams();
 
-  // ✨ internalCode مضاف
   const { projectType, villaCategory, contractType, internalCode } = value || {};
   const set = (k, v) => onChange({ ...value, [k]: v });
 
@@ -24,105 +37,88 @@ export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isVi
     contractType === "new";
 
   const canProceed = baseSelected && allowSitePlanFlow;
+  const hasNextStep = typeof onNext === "function";
 
-  const SS_KEY = `ProjectSetupStep:isView:${projectId || "new"}`;
-  const [localIsView, setLocalIsView] = useState(() => {
-    if (isView === true) return true;
-    const saved = sessionStorage.getItem(SS_KEY);
-    if (saved === "true" || saved === "false") return saved === "true";
+  const [errorMsg, setErrorMsg] = useState("");
+  const internalCodeInputRef = useRef(null);
+
+  const [viewMode, setViewMode] = useState(() => {
+    if (isView !== undefined) return isView === true;
     return false;
   });
 
   useEffect(() => {
-    if (isView === true) {
-      sessionStorage.setItem(SS_KEY, "true");
-      setLocalIsView(true);
+    if (isView !== undefined) {
+      setViewMode(isView === true);
     }
   }, [isView]);
 
+  const isReadOnly = viewMode === true;
+
+  // ✅ تحميل البيانات من الـ backend عند فتح الصفحة
   useEffect(() => {
-    sessionStorage.setItem(SS_KEY, String(localIsView));
-  }, [SS_KEY, localIsView]);
-
-  useEffect(() => {
-    if (!baseSelected && localIsView) setLocalIsView(false);
-  }, [baseSelected, localIsView]);
-
-  const labels = {
-    pageTitle: `🧱 ${t("wizard_step_setup")}`,
-    categoryTitle: lang === "ar" ? "🏗️ تصنيف المشروع" : "🏗️ Project Category",
-    subcatsTitle: lang === "ar" ? "📄 التصنيفات الفرعية" : "📄 Subcategories",
-    contractTypeTitle: lang === "ar" ? "📝 نوع العقد" : "📝 Contract Type",
-    // ✨ NEW: internal code labels
-    internalCodeTitle: lang === "ar" ? "🔐 الكود الداخلي للمشروع" : "🔐 Internal Project Code",
-    internalCodeHelp:
-      lang === "ar"
-        ? " يبدأ بالحرف  M وبعدين أرقام فردية فقط (1,3,5,7,9)."
-        : "Must start with M, followed by odd digits only (1,3,5,7,9). Any other characters/even digits are stripped automatically.",
-    internalCodePlaceholder: lang === "ar" ? "مثال: M13579" : "e.g., M13579",
-
-    readyNote:
-      lang === "ar"
-        ? `اضغط «التالي» للانتقال إلى ${"📐 " + t("wizard_step_siteplan")} ثم ${"📄 " + t("wizard_step_license")} و ${"📝 " + t("wizard_step_contract")}.`
-        : `Press “Next” to continue to ${"📐 " + t("wizard_step_siteplan")}, then ${"📄 " + t("wizard_step_license")} and ${"📝 " + t("wizard_step_contract")}.`,
-    helpSelectAll:
-      lang === "ar"
-        ? "اختر تصنيف المشروع (ولو فيلا اختر التصنيف الفرعي) ثم حدّد نوع العقد."
-        : "Pick the Project Category (and a subcategory if Villa), then select the Contract Type.",
-    helpPathOnly:
-      lang === "ar"
-        ? "هذا المسار متاح فقط لفيلا سكنية أو فيلا تجارية مع عقد إنشاء جديد. عدّل الاختيارات ليظهر «التالي»."
-        : "This path is only available for Residential or Commercial Villa with a New Contract. Adjust selections to enable “Next”.",
-    edit: lang === "ar" ? "تعديل" : "Edit",
+    if (!projectId) return;
+    
+    let mounted = true;
+    
+    (async () => {
+      try {
+        const { data } = await api.get(`projects/${projectId}/`);
+        if (!mounted) return;
+        
+        // ✅ تحديث الحالة بالبيانات من الـ backend فقط إذا كانت مختلفة
+        const newData = {
+          projectType: data?.project_type || "",
+          villaCategory: data?.villa_category || "",
+          contractType: data?.contract_type || "",
+          internalCode: data?.internal_code || "",
+        };
+        
+        // ✅ تحديث فقط إذا كانت البيانات مختلفة
+        if (
+          newData.projectType !== (value?.projectType || "") ||
+          newData.villaCategory !== (value?.villaCategory || "") ||
+          newData.contractType !== (value?.contractType || "") ||
+          newData.internalCode !== (value?.internalCode || "")
+        ) {
+          onChange(newData);
+        }
+      } catch (e) {
+        console.error("Error loading project data:", e);
+      }
+    })();
+    
+    return () => {
+      mounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+  
+  // ✅ معالج بسيط للكود الداخلي: يحفظ الأرقام فقط، و M تضاف في العرض فقط
+  const handleInternalCodeChange = (e) => {
+    const raw = e.target.value || "";
+    const digits = toDigits(raw);
+    // نحفظ في الـ state الأرقام فقط؛ التنسيق (M + الأرقام) يتم عند العرض
+    set("internalCode", digits);
   };
 
-  const chipsProjectTypes = useMemo(
-    () =>
-      lang === "ar"
-        ? [
-            ["villa", "🏡 فيلا"],
-            ["commercial", "🏢 تجاري"],
-            ["maintenance", "🛠️ أعمال صيانة"],
-            ["governmental", "🏛️ مشاريع حكومية"],
-            ["fitout", "🔨 أعمال تجديد وتجهيز داخلي"],
-          ]
-        : [
-            ["villa", "🏡 Villa"],
-            ["commercial", "🏢 Commercial"],
-            ["maintenance", "🛠️ Maintenance Works"],
-            ["governmental", "🏛️ Governmental"],
-            ["fitout", "🔨 Renovation & Fit-Out"],
-          ],
-    [lang]
-  );
+  const labels = {
+    pageTitle: t("wizard_step_setup"),
+    categoryTitle: t("setup_project_category_title"),
+    subcatsTitle: t("setup_subcategories_title"),
+    contractTypeTitle: t("setup_contract_type_title"),
+    internalCodeTitle: t("internal_project_code"),
+    internalCodeHelp: t("internal_code_help"),
+    internalCodePlaceholder: t("internal_code_placeholder"),
+    readyNote: t("setup_ready_note"),
+    helpSelectAll: t("setup_help_select_all"),
+    helpPathOnly: t("setup_help_path_only"),
+    edit: t("edit"),
+  };
 
-  const villaSubcategories = useMemo(
-    () =>
-      lang === "ar"
-        ? [
-            ["residential", "🏡 فيلا سكنية"],
-            ["commercial", "🏠💼 فيلا تجارية"],
-          ]
-        : [
-            ["residential", "🏡 Residential Villa"],
-            ["commercial", "🏠💼 Commercial Villa"],
-          ],
-    [lang]
-  );
-
-  const contractTypes = useMemo(
-    () =>
-      lang === "ar"
-        ? [
-            ["new", "🔹 عقد إنشاء جديد"],
-            ["continue", "🔄 عقد استكمال"],
-          ]
-        : [
-            ["new", "🔹 New Contract"],
-            ["continue", "🔄 Continuation Contract"],
-          ],
-    [lang]
-  );
+  const chipsProjectTypes = useMemo(() => PROJECT_TYPES[isAR ? "ar" : "en"], [isAR]);
+  const villaSubcategories = useMemo(() => VILLA_CATEGORIES[isAR ? "ar" : "en"], [isAR]);
+  const contractTypes = useMemo(() => CONTRACT_TYPES[isAR ? "ar" : "en"], [isAR]);
 
   const labelMap = useMemo(() => {
     const m = (pairs) =>
@@ -137,103 +133,110 @@ export default function ProjectSetupStep({ value, onChange, onNext, onPrev, isVi
     };
   }, [chipsProjectTypes, villaSubcategories, contractTypes]);
 
-  const renderChips = (options, currentValue, key) => (
-    <div className="chips">
-      {options.map(([v, label]) => (
-        <button
-          key={v}
-          type="button"
-          className={`chip ${currentValue === v ? "active" : ""}`}
-          onClick={() => set(key, v)}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
+  const handleSaveAndNext = async () => {
+    if (!projectId) return;
 
-// ✨ NEW: formatter for internal code => "M" + digits only (زوجي + فردي)
-const toDigits = (s) =>
-  (s || "").replace(/[^0-9]/g, ""); // أرقام فقط بدون حذف الزوجي
+    const formatted = formatInternalCode(internalCode);
 
-const formatInternalCode = (raw) => {
-  const digits = toDigits(raw);
-  return ("M" + digits).slice(0, 40);
-};
-const isLastDigitOdd = (code) => {
-  const last = code.replace(/\D/g, "").slice(-1);
-  return ["1", "3", "5", "7", "9"].includes(last);
-};
+    if (!isLastDigitOdd(formatted)) {
+      setErrorMsg(t("internal_code_last_digit_error"));
+      return;
+    }
 
-const handleSaveAndNext = async () => {
-  if (!projectId) return;
+    try {
+      setErrorMsg("");
+      const payload = {
+        project_type: projectType || null,
+        villa_category: projectType === "villa" ? (villaCategory || null) : null,
+        contract_type: contractType || null,
+        internal_code: formatted,
+      };
 
-  const formatted = formatInternalCode(internalCode);
+      await api.patch(`projects/${projectId}/`, payload);
 
-  // ✅ التحقق إن آخر رقم فردي
-  if (!isLastDigitOdd(formatted)) {
-    alert(
-      lang === "ar"
-        ? "آخر رقم في الكود يجب أن يكون فردي (1,3,5,7,9)."
-        : "The last digit must be odd (1,3,5,7,9)."
-    );
-    return;
-  }
+      // في حالة صفحة العرض: نسمح للأب بإعادة تحميل بيانات المشروع من الـ backend
+      if (typeof onSaved === "function") {
+        onSaved();
+      }
 
-  try {
-    const payload = {
-      project_type: projectType || null,
-      villa_category: projectType === "villa" ? (villaCategory || null) : null,
-      contract_type: contractType || null,
-      internal_code: formatted,
-    };
-
-    await api.patch(`projects/${projectId}/`, payload);
-    setLocalIsView(true);
-    sessionStorage.setItem(SS_KEY, "true");
-
-    if (onNext && canProceed) onNext();
-  } catch (e) {
-    console.error("Project setup save failed:", e);
-  }
-};
-
+      if (onNext && canProceed) {
+        onNext();
+      } else {
+        // لا يوجد خطوة تالية أو لا يمكن المتابعة → العودة لوضع العرض
+        setViewMode(true);
+      }
+    } catch (e) {
+      const msg = e?.response?.data
+        ? JSON.stringify(e.response.data, null, 2)
+        : e.message || t("save_project_error");
+      setErrorMsg(msg);
+    }
+  };
 
   return (
     <WizardShell title={labels.pageTitle}>
-      {localIsView && (
-        <div className={`row ${lang === "ar" ? "justify-start" : "justify-end"} mb-12`}>
-          <button type="button" className="btn secondary" onClick={() => setLocalIsView(false)}>
-            ✏️ {labels.edit}
-          </button>
+      <Dialog
+        open={!!errorMsg}
+        title={t("error")}
+        desc={<pre className="pre-wrap" style={{ margin: 0 }}>{errorMsg}</pre>}
+        confirmLabel={t("ok")}
+        onClose={() => setErrorMsg("")}
+        onConfirm={() => setErrorMsg("")}
+      />
+
+      {/* زر تعديل أعلى الصفحة مثل SitePlanStep */}
+      {isReadOnly && (
+        <div className={`row ${isAR ? "justify-start" : "justify-end"} mb-12`}>
+          <Button variant="secondary" onClick={() => setViewMode(false)}>
+            {labels.edit}
+          </Button>
         </div>
       )}
 
-      {/* ✨ NEW: Internal Code field */}
+      {/* الكود الداخلي */}
       <h4 className="inline-flex ai-center gap-6">
         {labels.internalCodeTitle}
         <InfoTip inline align="start" text={labels.internalCodeHelp} />
       </h4>
 
-      {localIsView ? (
+      {isReadOnly ? (
         <div className="card" role="group" aria-label={labels.internalCodeTitle}>
           <div className="p-8 mono">
-            {(internalCode && formatInternalCode(internalCode)) || "—"}
+            {(internalCode && formatInternalCode(internalCode)) || t("empty_value")}
           </div>
         </div>
       ) : (
         <div className="card" role="group" aria-label={labels.internalCodeTitle}>
           <div className="p-8">
-            <input
-              type="text"
-              inputMode="numeric"
-              className="input w-100 mono"
-              placeholder={labels.internalCodePlaceholder}
-              value={formatInternalCode(internalCode || "")}
-              onChange={(e) => set("internalCode", formatInternalCode(e.target.value))}
-              aria-describedby="internal-code-help"
-              maxLength={40}
-            />
+            <Field>
+              <input
+                ref={internalCodeInputRef}
+                type="text"
+                inputMode="numeric"
+                className="input w-100 mono"
+                placeholder={labels.internalCodePlaceholder}
+                value={formatInternalCode(internalCode || "")}
+                onChange={handleInternalCodeChange}
+                onKeyDown={(e) => {
+                  // ✅ منع حذف "M" فقط في حالة واحدة: إذا كانت القيمة "M" فقط (لا توجد أرقام)
+                  if (e.key === "Backspace" || e.key === "Delete") {
+                    const input = e.target;
+                    const cursorPos = input.selectionStart;
+                    const value = input.value;
+                    
+                    // ✅ منع حذف "M" فقط إذا كانت القيمة "M" فقط (لا توجد أرقام بعدها)
+                    if (value === "M" && cursorPos <= 1) {
+                      e.preventDefault();
+                      return;
+                    }
+                    
+                    // ✅ السماح بجميع عمليات الحذف الأخرى (حذف الأرقام، إلخ)
+                  }
+                }}
+                aria-describedby="internal-code-help"
+                maxLength={40}
+              />
+            </Field>
             <div id="internal-code-help" className="muted mt-4">
               {labels.internalCodeHelp}
             </div>
@@ -241,8 +244,8 @@ const handleSaveAndNext = async () => {
         </div>
       )}
 
-      {/* تصنيف المشروع + أيقونة المعلومة */}
-      <h4 className="inline-flex ai-center gap-6">
+      {/* تصنيف المشروع */}
+      <h4 className="inline-flex ai-center gap-6 mt-12">
         {labels.categoryTitle}
         <InfoTip
           inline
@@ -255,16 +258,20 @@ const handleSaveAndNext = async () => {
               ? labels.helpPathOnly
               : labels.helpSelectAll
           }
-          title={lang === "ar" ? "معلومة" : "Info"}
+          title={t("info")}
         />
       </h4>
 
-      {localIsView ? (
+      {isReadOnly ? (
         <div className="card" role="group" aria-label={labels.categoryTitle}>
-          <div className="p-8">{labelMap.projectType[projectType] || "—"}</div>
+          <div className="p-8">{labelMap.projectType[projectType] || t("empty_value")}</div>
         </div>
       ) : (
-        renderChips(chipsProjectTypes, projectType, "projectType")
+        <Chips
+          options={chipsProjectTypes}
+          value={projectType}
+          onChange={(v) => set("projectType", v)}
+        />
       )}
 
       {projectType === "villa" && (
@@ -274,15 +281,19 @@ const handleSaveAndNext = async () => {
             <InfoTip
               inline
               align="start"
-              text={lang === "ar" ? "اختر نوع الفيلا (سكنية/تجارية)." : "Pick villa type."}
+              text={t("pick_villa_type")}
             />
           </h4>
-          {localIsView ? (
+          {isReadOnly ? (
             <div className="card" role="group" aria-label={labels.subcatsTitle}>
-              <div className="p-8">{labelMap.villaCategory[villaCategory] || "—"}</div>
+              <div className="p-8">{labelMap.villaCategory[villaCategory] || t("empty_value")}</div>
             </div>
           ) : (
-            renderChips(villaSubcategories, villaCategory, "villaCategory")
+            <Chips
+              options={villaSubcategories}
+              value={villaCategory}
+              onChange={(v) => set("villaCategory", v)}
+            />
           )}
         </>
       )}
@@ -292,29 +303,31 @@ const handleSaveAndNext = async () => {
         <InfoTip
           inline
           align="start"
-          text={
-            lang === "ar"
-              ? "لو عايز مسار رخصة/مخطط، لازم عقد إنشاء جديد."
-              : "For site plan/license path, choose New Contract."
-          }
+              text={t("contract_type_info")}
         />
       </h4>
 
-      {localIsView ? (
+      {isReadOnly ? (
         <div className="card" role="group" aria-label={labels.contractTypeTitle}>
-          <div className="p-8">{labelMap.contractType[contractType] || "—"}</div>
+          <div className="p-8">{labelMap.contractType[contractType] || t("empty_value")}</div>
         </div>
       ) : (
-        renderChips(contractTypes, contractType, "contractType")
+        <Chips
+          options={contractTypes}
+          value={contractType}
+          onChange={(v) => set("contractType", v)}
+        />
       )}
 
-      <StepActions
-        onPrev={onPrev}
-        onNext={handleSaveAndNext}
-        disableNext={!baseSelected}
-        nextClassName={baseSelected ? "pulse" : ""}
-        nextLabel={lang === "ar" ? "حفظ وانتقال →" : "Save & Next →"}
-      />
+      {!isReadOnly && (
+        <StepActions
+          onPrev={onPrev}
+          onNext={handleSaveAndNext}
+          disableNext={!baseSelected}
+          nextClassName={baseSelected ? "pulse" : ""}
+          nextLabel={hasNextStep ? t("save_next_arrow") : t("save")}
+        />
+      )}
     </WizardShell>
   );
 }

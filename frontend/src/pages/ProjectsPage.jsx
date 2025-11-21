@@ -1,15 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { api } from "../services/api";
+import Button from "../components/Button";
+import Dialog from "../components/Dialog";
+import PageLayout from "../components/PageLayout";
+import { getProjectTypeLabel, getContractTypeLabel } from "../utils/projectLabels";
+import { formatInternalCode } from "../utils/internalCodeFormatter";
 
 export default function ProjectsPage() {
+  const { t, i18n } = useTranslation();
+  const isAR = /^ar\b/i.test(i18n.language || "");
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [enriching, setEnriching] = useState(false);
 
   // حذف فردي
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [targetProject, setTargetProject] = useState(null); // {id, name}
+  const [targetProject, setTargetProject] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
 
   // تحديد متعدد + حذف جماعي
@@ -21,6 +29,7 @@ export default function ProjectsPage() {
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
 
+
   // ===== فلاتر منظّمة =====
   const [filters, setFilters] = useState({
     q: "",
@@ -29,9 +38,10 @@ export default function ProjectsPage() {
     project_type: "",
     consultant: "",
     contract_type: "",
-    has_siteplan: "any", // any | yes | no
+    has_siteplan: "any",
     has_license: "any",
     has_contract: "any",
+    has_awarding: "any",
   });
 
   useEffect(() => {
@@ -44,55 +54,64 @@ export default function ProjectsPage() {
       const { data } = await api.get("projects/");
       const items = Array.isArray(data) ? data : (data?.results || data?.items || data?.data || []);
       setProjects(items || []);
-      // بعد ما نجيب اللستة الأساسية، نثريها بالمالك والاستشاري
       enrichOwnersAndConsultants(items || []);
     } catch (e) {
       console.error(e);
       setProjects([]);
-      showToast("error", "تعذّر تحميل المشاريع.");
+      showToast("error", t("projects_loading_error"));
     } finally {
       setLoading(false);
     }
   };
 
-  // ====== إثراء البيانات: المالك (SitePlan) + الاستشاري (License) ======
   const enrichOwnersAndConsultants = async (items) => {
     if (!items?.length) return;
     setEnriching(true);
     try {
-      // هنجيب لكل مشروع أول سجل من siteplan و license (لو موجودين)
       const enriched = await Promise.all(
         items.map(async (p) => {
           const id = p.id;
           let ownerLabel = null;
           let consultantName = null;
+          let hasAwarding = false;
+          let awardingData = null;
 
-          // 1) SitePlan → owners
           try {
             const { data: sp } = await api.get(`projects/${id}/siteplan/`);
             const first = Array.isArray(sp) ? sp[0] : null;
             if (first?.owners?.length) {
               const owners = first.owners.map((o) => o?.owner_name_ar || o?.owner_name || o?.owner_name_en || "").filter(Boolean);
               if (owners.length) {
-                ownerLabel = `فيلا السيد/ه ${owners[0]}${owners.length > 1 ? " وشركاؤه" : ""}`;
+                ownerLabel = `${t("villa_mr_ms")} ${owners[0]}${owners.length > 1 ? t("villa_mr_ms_partners") : ""}`;
               }
             }
-          } catch (e) {
-            // لا شيء
-          }
+          } catch (e) {}
 
-          // 2) License → consultant_name
           try {
             const { data: lic } = await api.get(`projects/${id}/license/`);
             const firstL = Array.isArray(lic) ? lic[0] : null;
-            if (firstL?.consultant_name) {
-              consultantName = firstL.consultant_name;
+            if (firstL) {
+              // استخدام design_consultant_name أو supervision_consultant_name
+              consultantName = firstL.design_consultant_name || firstL.supervision_consultant_name || null;
             }
-          } catch (e) {
-            // لا شيء
-          }
+          } catch (e) {}
 
-          return { ...p, __owner_label: ownerLabel, __consultant_name: consultantName };
+          try {
+            const { data: aw } = await api.get(`projects/${id}/awarding/`);
+            const firstA = Array.isArray(aw) ? aw[0] : (aw || null);
+            if (firstA) {
+              hasAwarding = true;
+              awardingData = firstA;
+            }
+          } catch (e) {}
+
+          return { 
+            ...p, 
+            __owner_label: ownerLabel, 
+            __consultant_name: consultantName,
+            __has_awarding: hasAwarding,
+            __awarding_data: awardingData,
+          };
         })
       );
 
@@ -110,15 +129,15 @@ export default function ProjectsPage() {
     toastTimer.current = setTimeout(() => setToast(null), 2500);
   };
 
-  // أدوات مساعدة
   const getOwnerLabel = (p) =>
     p?.__owner_label ||
-    (p?.display_name ? `فيلا السيد/ه ${p.display_name}` : "فيلا السيد/ه —");
+    (p?.display_name 
+      ? `${t("villa_mr_ms")} ${p.display_name}`
+      : t("villa_mr_ms_empty"));
 
   const getConsultantName = (p) =>
-    p?.__consultant_name || p?.consultant?.name || p?.consultant_name || "—";
+    p?.__consultant_name || p?.consultant?.name || p?.consultant_name || t("empty_value");
 
-  // ====== تصفية البيانات ======
   const filteredProjects = useMemo(() => {
     const q = filters.q.trim().toLowerCase();
     const code = filters.internal_code.trim().toLowerCase();
@@ -131,6 +150,8 @@ export default function ProjectsPage() {
       const hasSiteplan = !!p?.has_siteplan;
       const hasLicense = !!p?.has_license;
       const hasContract = !!p?.contract_type;
+      const hasAwarding = !!p?.__has_awarding;
+      const awardingData = p?.__awarding_data;
 
       const hay = [
         p?.display_name,
@@ -141,6 +162,10 @@ export default function ProjectsPage() {
         p?.city,
         getOwnerLabel(p),
         getConsultantName(p),
+        awardingData?.project_number || "",
+        awardingData?.consultant_registration_number || "",
+        awardingData?.contractor_registration_number || "",
+        awardingData?.award_date || "",
       ]
         .join(" ")
         .toLowerCase();
@@ -164,12 +189,15 @@ export default function ProjectsPage() {
         if (filters.has_contract === "yes" && !hasContract) return false;
         if (filters.has_contract === "no" && hasContract) return false;
       }
+      if (filters.has_awarding !== "any") {
+        if (filters.has_awarding === "yes" && !hasAwarding) return false;
+        if (filters.has_awarding === "no" && hasAwarding) return false;
+      }
 
       return true;
     });
-  }, [projects, filters]);
+  }, [projects, filters, isAR]);
 
-  // خيارات الفلاتر (قوائم فريدة من البيانات)
   const uniqueValues = (getter) => {
     const s = new Set();
     projects.forEach((p) => {
@@ -183,7 +211,6 @@ export default function ProjectsPage() {
   const consultants = useMemo(() => uniqueValues(getConsultantName), [projects]);
   const contractTypes = useMemo(() => uniqueValues((p) => p?.contract_type), [projects]);
 
-  // ====== تحديد متعدد ======
   const isAllSelected =
     filteredProjects.length > 0 && filteredProjects.every((p) => selectedIds.has(p.id));
 
@@ -203,9 +230,8 @@ export default function ProjectsPage() {
     });
   };
 
-  // حذف فردي
   const askDelete = (p) => {
-    const title = p?.display_name || p?.name || `مشروع #${p?.id}`;
+    const title = p?.display_name || p?.name || `${t("wizard_project_prefix")} #${p?.id}`;
     setTargetProject({ id: p.id, name: title });
     setConfirmOpen(true);
   };
@@ -222,18 +248,17 @@ export default function ProjectsPage() {
         n.delete(id);
         return n;
       });
-      showToast("success", "تم حذف المشروع بنجاح.");
+      showToast("success", t("delete_success"));
       setConfirmOpen(false);
       setTargetProject(null);
     } catch (e) {
       console.error("Delete failed:", e);
-      showToast("error", "حدث خطأ أثناء الحذف.");
+      showToast("error", t("delete_error"));
     } finally {
       setDeletingId(null);
     }
   };
 
-  // حذف جماعي
   const askBulkDelete = () => {
     if (selectedIds.size === 0) return;
     setBulkConfirmOpen(true);
@@ -252,20 +277,10 @@ export default function ProjectsPage() {
     setSelectedIds(new Set());
     setBulkDeleting(false);
     setBulkConfirmOpen(false);
-    if (fail === 0) showToast("success", `تم حذف ${ok} مشروعًا بنجاح.`);
-    else if (ok === 0) showToast("error", "تعذّر حذف المشاريع المحددة.");
-    else showToast("error", `تم حذف ${ok} وفشل حذف ${fail}.`);
+    if (fail === 0) showToast("success", t("bulk_delete_success", { count: ok }));
+    else if (ok === 0) showToast("error", t("bulk_delete_error"));
+    else showToast("error", t("bulk_delete_partial", { ok, fail }));
   };
-
-  if (loading) {
-    return (
-      <div className="prj-container">
-        <div className="prj-card prj-page">
-          <div className="prj-loading"><p className="prj-loading__text">⏳ جاري تحميل المشاريع...</p></div>
-        </div>
-      </div>
-    );
-  }
 
   const selectedCount = selectedIds.size;
 
@@ -273,112 +288,168 @@ export default function ProjectsPage() {
     setFilters({
       q: "", internal_code: "", city: "", project_type: "",
       consultant: "", contract_type: "", has_siteplan: "any",
-      has_license: "any", has_contract: "any",
+      has_license: "any", has_contract: "any", has_awarding: "any",
     });
 
   return (
-    <div className="prj-container" dir="rtl">
-      {/* ستايل بسيط للفلاتر (تحسين الشكل بسرعة) */}
-      <style>{`
-        .filters {
-          position: sticky; top: 0; background: #fff; z-index: 5;
-          padding: 10px 12px; border: 1px solid #eee; border-radius: 10px; margin-bottom: 12px;
-        }
-        .filters__grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
-        .filters__grid2 { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 8px; }
-        @media (max-width: 1200px) { .filters__grid, .filters__grid2 { grid-template-columns: repeat(3, 1fr); } }
-        @media (max-width: 700px) { .filters__grid, .filters__grid2 { grid-template-columns: repeat(2, 1fr); } }
-        .prj-input, .prj-select { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; }
-        .filters__actions { display:flex; gap:8px; align-items:center; justify-content:flex-start; }
-      `}</style>
-
-      <div className="prj-card prj-page">
-        <div className="prj-header">
-          <h2 className="prj-title"><span className="prj-title__icon">📁</span><span>المشاريع</span></h2>
-          <p className="prj-subtitle">اختر مشروعًا للاطّلاع على التفاصيل أو تعديل البيانات.</p>
-        </div>
-
-        {/* شريط الفلاتر المحسّن */}
-        <div className="filters">
-          <div className="filters__grid">
-            <input className="prj-input" placeholder="بحث عام..." value={filters.q}
-              onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} />
-            <input className="prj-input" placeholder="الكود الداخلي" value={filters.internal_code}
-              onChange={(e) => setFilters((f) => ({ ...f, internal_code: e.target.value }))} />
-            <input className="prj-input" placeholder="المدينة" value={filters.city}
-              onChange={(e) => setFilters((f) => ({ ...f, city: e.target.value }))} />
-            <select className="prj-select" value={filters.project_type}
-              onChange={(e) => setFilters((f) => ({ ...f, project_type: e.target.value }))}>
-              <option value="">التصنيف (الكل)</option>
-              {projectTypes.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <select className="prj-select" value={filters.consultant}
-              onChange={(e) => setFilters((f) => ({ ...f, consultant: e.target.value }))}>
-              <option value="">الاستشاري (الكل)</option>
-              {consultants.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <select className="prj-select" value={filters.contract_type}
-              onChange={(e) => setFilters((f) => ({ ...f, contract_type: e.target.value }))}>
-              <option value="">نوع العقد (الكل)</option>
-              {contractTypes.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
+    <PageLayout loading={loading} loadingText={t("loading_projects")}>
+      <div className="container">
+        <div className="card">
+          <div className="prj-header">
+            <h1 className="prj-title">{t("projects_title")}</h1>
+            <p className="prj-subtitle">{t("projects_subtitle")}</p>
           </div>
 
-          <div className="filters__grid2">
-            <select className="prj-select" value={filters.has_siteplan}
-              onChange={(e) => setFilters((f) => ({ ...f, has_siteplan: e.target.value }))}>
-              <option value="any">مخطط: الكل</option>
-              <option value="yes">مخطط: نعم</option>
-              <option value="no">مخطط: لا</option>
-            </select>
-            <select className="prj-select" value={filters.has_license}
-              onChange={(e) => setFilters((f) => ({ ...f, has_license: e.target.value }))}>
-              <option value="any">ترخيص: الكل</option>
-              <option value="yes">ترخيص: نعم</option>
-              <option value="no">ترخيص: لا</option>
-            </select>
-            <select className="prj-select" value={filters.has_contract}
-              onChange={(e) => setFilters((f) => ({ ...f, has_contract: e.target.value }))}>
-              <option value="any">عقد: الكل</option>
-              <option value="yes">عقد: نعم</option>
-              <option value="no">عقد: لا</option>
-            </select>
-            <div className="filters__actions">
-              <button className="prj-btn prj-btn--ghost" onClick={clearFilters}>مسح الفلاتر</button>
-              {enriching && <span className="prj-muted">…جاري جلب المالك/الاستشاري</span>}
+          {/* شريط الفلاتر */}
+          <div className="prj-filters">
+            <div className="prj-filters__grid">
+              <input 
+                className="prj-input" 
+                placeholder={t("general_search")} 
+                value={filters.q}
+                onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} 
+              />
+              <input 
+                className="prj-input" 
+                placeholder={t("project_view_internal_code").replace(":", "")} 
+                value={filters.internal_code}
+                onChange={(e) => setFilters((f) => ({ ...f, internal_code: e.target.value }))} 
+              />
+              <input 
+                className="prj-input" 
+                placeholder={t("city")} 
+                value={filters.city}
+                onChange={(e) => setFilters((f) => ({ ...f, city: e.target.value }))} 
+              />
+              <select 
+                className="prj-select" 
+                value={filters.project_type}
+                onChange={(e) => setFilters((f) => ({ ...f, project_type: e.target.value }))}
+              >
+                <option value="">{t("type_all")}</option>
+                {projectTypes.map((t) => (
+                  <option key={t} value={t}>{getProjectTypeLabel(t, i18n.language)}</option>
+                ))}
+              </select>
+              <select 
+                className="prj-select" 
+                value={filters.consultant}
+                onChange={(e) => setFilters((f) => ({ ...f, consultant: e.target.value }))}
+              >
+                <option value="">{t("consultant_all")}</option>
+                {consultants.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <select 
+                className="prj-select" 
+                value={filters.contract_type}
+                onChange={(e) => setFilters((f) => ({ ...f, contract_type: e.target.value }))}
+              >
+                <option value="">{t("contract_type_all")}</option>
+                {contractTypes.map((c) => (
+                  <option key={c} value={c}>{getContractTypeLabel(c, i18n.language)}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="prj-filters__grid2">
+              <select 
+                className="prj-select" 
+                value={filters.has_siteplan}
+                onChange={(e) => setFilters((f) => ({ ...f, has_siteplan: e.target.value }))}
+              >
+                <option value="any">{t("plan_all")}</option>
+                <option value="yes">{t("plan_yes")}</option>
+                <option value="no">{t("plan_no")}</option>
+              </select>
+              <select 
+                className="prj-select" 
+                value={filters.has_license}
+                onChange={(e) => setFilters((f) => ({ ...f, has_license: e.target.value }))}
+              >
+                <option value="any">{t("license_all")}</option>
+                <option value="yes">{t("license_yes")}</option>
+                <option value="no">{t("license_filter_no")}</option>
+              </select>
+              <select 
+                className="prj-select" 
+                value={filters.has_contract}
+                onChange={(e) => setFilters((f) => ({ ...f, has_contract: e.target.value }))}
+              >
+                <option value="any">{t("contract_all")}</option>
+                <option value="yes">{t("contract_yes")}</option>
+                <option value="no">{t("contract_no")}</option>
+              </select>
+              <select 
+                className="prj-select" 
+                value={filters.has_awarding}
+                onChange={(e) => setFilters((f) => ({ ...f, has_awarding: e.target.value }))}
+              >
+                <option value="any">{t("awarding_all")}</option>
+                <option value="yes">{t("awarding_yes")}</option>
+                <option value="no">{t("awarding_no")}</option>
+              </select>
+              <div className="prj-filters__actions">
+                <Button variant="ghost" onClick={clearFilters}>
+                  {t("clear_filters")}
+                </Button>
+                {enriching && (
+                  <span className="prj-muted">
+                    {t("loading_owner_consultant")}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* شريط إجراءات عند وجود تحديد */}
-        {selectedCount > 0 && (
-          <div className="prj-bulkbar">
-            <div className="prj-bulkbar__info">محدد: <strong>{selectedCount}</strong></div>
-            <div className="prj-bulkbar__actions">
-              <button className="prj-btn prj-btn--danger" onClick={askBulkDelete}>حذف المحدد</button>
-              <button className="prj-btn prj-btn--ghost" onClick={() => setSelectedIds(new Set())}>إلغاء التحديد</button>
+          {/* شريط إجراءات عند وجود تحديد */}
+          {selectedCount > 0 && (
+            <div className="prj-bulkbar">
+              <div className="prj-bulkbar__info">
+                {t("selected")} <strong>{selectedCount}</strong>
+              </div>
+              <div className="prj-bulkbar__actions">
+                <Button variant="danger" onClick={askBulkDelete}>
+                  {t("delete_selected")}
+                </Button>
+                <Button variant="ghost" onClick={() => setSelectedIds(new Set())}>
+                  {t("clear_selection")}
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {filteredProjects.length === 0 ? (
-          <div className="prj-alert"><span className="prj-alert__title">🚧 لا توجد مشاريع مطابقة للفلاتر.</span></div>
-        ) : (
-          <div className="prj-table__wrapper">
+          {filteredProjects.length === 0 ? (
+            <div className="prj-alert">
+              <div className="prj-alert__title">
+                {t("no_projects_match")}
+              </div>
+            </div>
+          ) : (
+            <div className="prj-table__wrapper">
             <table className="prj-table">
               <thead>
                 <tr>
-                  <th style={{ width: 36, textAlign: "center" }}>
-                    <input type="checkbox" aria-label="تحديد الكل" checked={isAllSelected} onChange={toggleSelectAll} />
+                  <th style={{ width: 50 }} className="text-center">
+                    <input 
+                      type="checkbox" 
+                      aria-label={t("select_all")} 
+                      checked={isAllSelected} 
+                      onChange={toggleSelectAll} 
+                    />
                   </th>
                   <th>#</th>
-                  <th>الكود الداخلي</th>
-                  <th>المالك</th>
-                  <th>التصنيف</th>
-                  <th>الاستشاري</th>
-                  <th>نوع العقد</th>
-                  <th>الحالة</th>
-                  <th>إجراءات</th>
+                  <th>{t("project_view_internal_code").replace(":", "")}</th>
+                  <th>{t("owner")}</th>
+                  <th>{t("type")}</th>
+                  <th>{t("consultant")}</th>
+
+                  {/* ✅ اخفاء نوع العقد: احذف الهيدر ده */}
+                  {/* <th>{t("contract_type_label")}</th> */}
+
+                  <th>{t("status")}</th>
+                  <th>{t("action")}</th>
                 </tr>
               </thead>
 
@@ -387,40 +458,90 @@ export default function ProjectsPage() {
                   const hasSiteplan = !!p?.has_siteplan;
                   const hasLicense = !!p?.has_license;
                   const hasContract = !!p?.contract_type;
-                  const active = hasSiteplan || hasLicense || hasContract;
+                  const hasAwarding = !!p?.__has_awarding;
                   const checked = selectedIds.has(p.id);
-                  const title = p?.display_name || p?.name || `مشروع #${p?.id ?? i + 1}`;
+                  const title = p?.display_name || p?.name || `${t("wizard_project_prefix")} #${p?.id ?? i + 1}`;
 
                   return (
-                    <tr key={p?.id ?? i} className={active ? "prj-row--active" : undefined}>
-                      <td style={{ textAlign: "center" }}>
-                        <input type="checkbox" aria-label={`تحديد ${title}`} checked={checked} onChange={() => toggleSelect(p.id)} />
+                    <tr
+                      key={p?.id ?? i}
+                      className={hasSiteplan || hasLicense || hasContract || hasAwarding ? "prj-row--active" : undefined}
+                    >
+                      <td className="text-center">
+                        <input 
+                          type="checkbox" 
+                          aria-label={`${t("select")} ${title}`} 
+                          checked={checked} 
+                          onChange={() => toggleSelect(p.id)} 
+                        />
                       </td>
 
                       <td className="prj-muted">{i + 1}</td>
 
                       <td>
-                        <code className="prj-code">{p?.internal_code || `PRJ-${p?.id ?? i + 1}`}</code>
-                        <div className="prj-cell__sub prj-muted">{p?.city ? `المدينة: ${p.city}` : "—"}</div>
+                        <code className="prj-code">
+                          {p?.internal_code
+                            ? formatInternalCode(p.internal_code)
+                            : `PRJ-${p?.id ?? i + 1}`}
+                        </code>
+                        {p?.city && (
+                          <div className="prj-cell__sub prj-muted">
+                            {t("city_label")} {p.city}
+                          </div>
+                        )}
                       </td>
 
                       <td className="prj-nowrap">{getOwnerLabel(p)}</td>
-                      <td className="prj-nowrap">{p?.project_type || "—"}</td>
+
+                      {/* ✅ النوع + سكنية جديدة */}
+                      <td className="prj-nowrap">
+                        {p?.project_type
+                          ? `${getProjectTypeLabel(p.project_type, i18n.language)} سكنية جديدة`
+                          : t("empty_value")}
+                      </td>
+
                       <td className="prj-nowrap">{getConsultantName(p)}</td>
-                      <td className="prj-nowrap">{p?.contract_type || "—"}</td>
+
+                      {/* ✅ اخفاء نوع العقد: احذف الخلية دي */}
+                      {/* 
+                      <td className="prj-nowrap">
+                        {p?.contract_type ? getContractTypeLabel(p.contract_type, i18n.language) : t("empty_value")}
+                      </td> 
+                      */}
 
                       <td>
                         <div className="prj-badges">
-                          <span className={`prj-badge ${hasSiteplan ? "is-on" : "is-off"}`}>مخطط</span>
-                          <span className={`prj-badge ${hasLicense ? "is-on" : "is-off"}`}>ترخيص</span>
-                          <span className={`prj-badge ${hasContract ? "is-on" : "is-off"}`}>عقد</span>
+                          <span className={`prj-badge ${hasSiteplan ? "is-on" : "is-off"}`}>
+                            {t("bc_siteplan")}
+                          </span>
+                          <span className={`prj-badge ${hasLicense ? "is-on" : "is-off"}`}>
+                            {t("bc_license")}
+                          </span>
+                          <span className={`prj-badge ${hasContract ? "is-on" : "is-off"}`}>
+                            {t("bc_contract")}
+                          </span>
+                          <span className={`prj-badge ${hasAwarding ? "is-on" : "is-off"}`}>
+                            {t("bc_awarding")}
+                          </span>
                         </div>
                       </td>
 
                       <td className="prj-actions">
-                        <Link className="prj-btn prj-btn--primary" to={`/projects/${p?.id}/wizard`}>تعديل</Link>
-                        <Link className="prj-btn prj-btn--ghost" to={`/projects/${p?.id}`}>عرض →</Link>
-                        <button className="prj-btn prj-btn--danger" onClick={() => askDelete(p)} disabled={deletingId === p.id} title="حذف المشروع">حذف</button>
+                        <Button as={Link} variant="primary" to={`/projects/${p?.id}/wizard`} className="prj-btn prj-btn--primary">
+                          {t("edit")}
+                        </Button>
+                        <Button as={Link} variant="ghost" to={`/projects/${p?.id}`} className="prj-btn prj-btn--ghost">
+                          {t("view")}
+                        </Button>
+                        <Button 
+                          variant="danger" 
+                          onClick={() => askDelete(p)} 
+                          disabled={deletingId === p.id} 
+                          title={t("delete_project")}
+                          className="prj-btn prj-btn--danger"
+                        >
+                          {t("delete")}
+                        </Button>
                       </td>
                     </tr>
                   );
@@ -429,81 +550,63 @@ export default function ProjectsPage() {
 
               <tfoot>
                 <tr>
-                  <td colSpan={9} className="prj-foot prj-muted">
-                    إجمالي المشاريع المطابقة: {filteredProjects.length} / الكل: {projects.length}
+                  {/* ✅ كان 9 بقى 8 بعد حذف عمود نوع العقد */}
+                  <td colSpan={8} className="prj-foot prj-muted">
+                    {t("matching_total", { count: filteredProjects.length, total: projects.length })}
                   </td>
                 </tr>
               </tfoot>
             </table>
+            </div>
+          )}
+        </div>
+
+        {/* Toast */}
+        {toast && (
+          <div className={`toast ${toast.type === "success" ? "toast--ok" : "toast--err"}`} role="status" aria-live="polite">
+            {toast.msg}
           </div>
         )}
-      </div>
 
-      {/* Toast */}
-      {toast && (
-        <div className={`toast ${toast.type === "success" ? "toast--ok" : "toast--err"}`} role="status" aria-live="polite">
-          {toast.msg}
-        </div>
-      )}
-
-      {/* Confirm Dialog — حذف فردي */}
-      {confirmOpen && (
-        <ConfirmDialog
-          title="تأكيد الحذف"
-          desc={<>هل أنت متأكد من حذف المشروع <strong style={{marginInline: 6}}>{targetProject?.name}</strong>؟<br/>هذا الإجراء لا يمكن التراجع عنه.</>}
-          confirmLabel={deletingId ? "جارٍ الحذف..." : "حذف نهائي"}
-          cancelLabel="إلغاء"
+        {/* Confirm Dialog — حذف فردي */}
+        <Dialog
+          open={confirmOpen}
+          title={t("confirm_delete")}
+          desc={
+            <>
+              {t("confirm_delete_desc")}{" "}
+              <strong style={{marginInline: 6}}>{targetProject?.name}</strong>?<br/>
+              {t("delete_cannot_undo")}
+            </>
+          }
+          confirmLabel={deletingId ? t("deleting") : t("delete_permanent")}
+          cancelLabel={t("cancel")}
           onClose={() => !deletingId && setConfirmOpen(false)}
           onConfirm={handleDelete}
           danger
           busy={!!deletingId}
         />
-      )}
 
-      {/* Confirm Dialog — حذف جماعي */}
-      {bulkConfirmOpen && (
-        <ConfirmDialog
-          title="حذف جماعي"
-          desc={<>سيتم حذف <strong>{selectedCount}</strong> مشروع/مشاريع نهائيًا.<br/>هل تريد المتابعة؟</>}
-          confirmLabel={bulkDeleting ? "جارٍ الحذف..." : "حذف المحدد"}
-          cancelLabel="إلغاء"
+        {/* Confirm Dialog — حذف جماعي */}
+        <Dialog
+          open={bulkConfirmOpen}
+          title={t("bulk_delete")}
+          desc={
+            <>
+              {t("bulk_delete_desc")}{" "}
+              <strong>{selectedCount}</strong>{" "}
+              {t("bulk_delete_desc2")}<br/>
+              {t("bulk_delete_continue")}
+            </>
+          }
+          confirmLabel={bulkDeleting ? t("deleting") : t("delete_selected")}
+          cancelLabel={t("cancel")}
           onClose={() => !bulkDeleting && setBulkConfirmOpen(false)}
           onConfirm={handleBulkDelete}
           danger
           busy={bulkDeleting}
         />
-      )}
-    </div>
-  );
-}
-
-/* ====== Dialog Component (بدون مكتبات) ====== */
-function ConfirmDialog({ title, desc, confirmLabel, cancelLabel, onClose, onConfirm, danger, busy }) {
-  const dialogRef = useRef(null);
-
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  const onBackdrop = (e) => {
-    if (e.target === dialogRef.current) onClose?.();
-  };
-
-  return (
-    <div ref={dialogRef} className="dlg-backdrop" onMouseDown={onBackdrop}>
-      <div className="dlg" role="dialog" aria-modal="true" aria-labelledby="dlg-title" aria-describedby="dlg-desc">
-        <div className="dlg-hd"><span id="dlg-title" className="dlg-title">{title}</span></div>
-        <div id="dlg-desc" className="dlg-body">{desc}</div>
-        <div className="dlg-ft">
-          <button className="prj-btn prj-btn--ghost" onClick={onClose} disabled={busy}>{cancelLabel || "إلغاء"}</button>
-          <button className={`prj-btn ${danger ? "prj-btn--danger" : "prj-btn--primary"}`} onClick={onConfirm} disabled={busy}>
-            {confirmLabel || "تأكيد"}
-          </button>
-        </div>
       </div>
-    </div>
+    </PageLayout>
   );
 }
-  

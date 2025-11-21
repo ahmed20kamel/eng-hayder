@@ -11,6 +11,7 @@ const ROOT = isDev
 const api = axios.create({
   baseURL: isDev ? "/api/" : `${ROOT}/api/`,
   withCredentials: true,
+  timeout: 300000, // 5 دقائق للرفع (خاصة للملفات الكبيرة)
 });
 
 function getCookie(name) {
@@ -65,6 +66,58 @@ api.interceptors.response.use(
     return Promise.reject(err);
   }
 );
+
+/**
+ * رفع ملف مع تتبع التقدم
+ * @param {string} url - رابط الرفع
+ * @param {FormData} formData - البيانات المراد رفعها
+ * @param {Function} onUploadProgress - دالة لتتبع التقدم (progress: number) => void
+ * @param {Object} config - إعدادات إضافية
+ * @returns {Promise} - Promise مع الاستجابة
+ */
+export function uploadFile(url, formData, onUploadProgress, config = {}) {
+  return api.post(url, formData, {
+    ...config,
+    headers: {
+      'Content-Type': 'multipart/form-data',
+      ...config.headers,
+    },
+    onUploadProgress: (progressEvent) => {
+      if (onUploadProgress && progressEvent.total) {
+        const percentCompleted = Math.round(
+          (progressEvent.loaded * 100) / progressEvent.total
+        );
+        onUploadProgress(percentCompleted);
+      }
+    },
+  });
+}
+
+/**
+ * تحديث ملف مع تتبع التقدم
+ * @param {string} url - رابط التحديث
+ * @param {FormData} formData - البيانات المراد رفعها
+ * @param {Function} onUploadProgress - دالة لتتبع التقدم (progress: number) => void
+ * @param {Object} config - إعدادات إضافية
+ * @returns {Promise} - Promise مع الاستجابة
+ */
+export function updateFile(url, formData, onUploadProgress, config = {}) {
+  return api.patch(url, formData, {
+    ...config,
+    headers: {
+      'Content-Type': 'multipart/form-data',
+      ...config.headers,
+    },
+    onUploadProgress: (progressEvent) => {
+      if (onUploadProgress && progressEvent.total) {
+        const percentCompleted = Math.round(
+          (progressEvent.loaded * 100) / progressEvent.total
+        );
+        onUploadProgress(percentCompleted);
+      }
+    },
+  });
+}
 
 export { api };
 export default api;
