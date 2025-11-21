@@ -161,23 +161,23 @@
   display: block;
 }
 
-.main-grid {
+/* شبكة الجداول الرئيسية (مشاريع / ملاك / استشاريين) */
+.tables-grid {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: var(--space-4);
   margin-bottom: var(--space-4);
+  align-items: stretch;
 }
 
 @media (max-width: 1200px) {
-  .main-grid {
+  .tables-grid {
     grid-template-columns: 1fr;
   }
 }
 
-.grid-column {
+.table-column {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
 }
 
 .data-table-container {
@@ -202,7 +202,7 @@
 
 .table-header h3 {
   margin: 0;
-  font-size: var(--fs-14);
+  font-size: var(--fs-16);
   font-weight: 700;
   color: var(--ink);
 }
@@ -217,12 +217,12 @@
 
 .table-wrapper {
   overflow-x: auto;
-  max-height: 260px;
+  max-height: 320px;
   overflow-y: auto;
 }
 
 .data-table-container.compact .table-wrapper {
-  max-height: 180px;
+  max-height: 220px;
 }
 
 .modern-table {
@@ -239,6 +239,9 @@
   font-size: 13px;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 .modern-dashboard.rtl .modern-table th {
@@ -381,6 +384,27 @@
   opacity: 0.5;
 }
 
+/* شبكة الرسوم البيانية: حالة المشاريع / تطور العقود / أعلى المشاريع قيمة (3 كروت جنب بعض) */
+.charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  align-items: stretch;
+}
+
+@media (max-width: 1100px) {
+  .charts-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .chart-card {
   background: var(--surface);
   border-radius: var(--radius);
@@ -401,6 +425,58 @@
   display: flex;
   align-items: center;
   gap: var(--space-4);
+}
+
+/* شارت الأعمدة (أعلى المشاريع قيمة) */
+.bars-container {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  height: 120px;
+}
+
+.bar-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+}
+
+.bar-track {
+  height: 80px;
+  width: 20px;
+  background: var(--surface-2);
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+
+.bar-fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  border-radius: 4px;
+  transition: height 0.3s ease;
+}
+
+.bar-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  margin-top: 4px;
+}
+
+.bar-label {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+  text-align: center;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .legend {
@@ -489,6 +565,133 @@
 
 .financial-item .value.accent {
   color: var(--primary-dark);
+}
+
+/* قسم الملخص المالي + تفاصيل المشاريع */
+.financial-section {
+  margin-bottom: var(--space-4);
+}
+
+.financial-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-3);
+}
+
+.financial-section-header h2 {
+  margin: 0;
+  font-size: var(--fs-18);
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.vat-toggle {
+  display: inline-flex;
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 3px;
+  border: 1px solid var(--border);
+}
+
+.toggle-btn {
+  padding: 6px 14px;
+  border: none;
+  background: transparent;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--muted);
+}
+
+.toggle-btn.active {
+  background: var(--primary);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+
+.vat-indicator {
+  background: var(--primary);
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.financial-grid {
+  margin-bottom: var(--space-3);
+}
+
+.financial-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+@media (max-width: 900px) {
+  .financial-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.financial-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.financial-card.primary {
+  border-inline-start: 4px solid var(--primary);
+}
+
+.financial-card.secondary {
+  border-inline-start: 4px solid var(--ink);
+}
+
+.financial-card.accent {
+  border-inline-start: 4px solid var(--primary-dark);
+}
+
+.modern-dashboard.rtl .financial-card.primary,
+.modern-dashboard.rtl .financial-card.secondary,
+.modern-dashboard.rtl .financial-card.accent {
+  border-inline-start: 0;
+  border-inline-end-width: 4px;
+}
+
+.financial-title {
+  font-size: 14px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.financial-amount {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+
+.financial-subtitle {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.financial-icon {
+  font-size: 32px;
+  opacity: 0.7;
+}
+
+.financial-details-table .data-table-container {
+  max-height: 420px;
 }
 
 .contractors-section,

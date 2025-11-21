@@ -68,7 +68,7 @@ const DataTable = ({ title, columns, data, onRowClick, emptyMessage, compact, is
   </div>
 );
 
-const DonutChart = ({ data, labels, colors, title, size = 120, isAR }) => {
+const DonutChart = ({ data, labels, colors, title, size = 120 }) => {
   const total = data.reduce((sum, value) => sum + value, 0);
   let accumulated = 0;
   
@@ -132,7 +132,7 @@ const DonutChart = ({ data, labels, colors, title, size = 120, isAR }) => {
             fontSize="12" 
             fill="var(--muted)"
           >
-            {isAR ? "مشروع" : "Project"}
+            مشروع
           </text>
         </svg>
         
@@ -840,7 +840,7 @@ export default function HomePage() {
     ? ["يناير", "فبراير", "مارس", "أبريل", "مايو"]
     : ["Jan", "Feb", "Mar", "Apr", "May"];
 
-  // أعلى المشاريع قيمة (من بيانات التفاصيل المالية)
+  // أعلى المشاريع قيمة (من بيانات التفاصيل المالية) - نعرض أعلى 3 فقط
   const topProjectsByValue = [...projectFinancialRows]
     .filter((p) => typeof (p.actualTotalWithVat || p.contractTotalWithVat) === "number")
     .sort(
@@ -848,7 +848,7 @@ export default function HomePage() {
         (b.actualTotalWithVat || b.contractTotalWithVat || 0) -
         (a.actualTotalWithVat || a.contractTotalWithVat || 0)
     )
-    .slice(0, 5);
+    .slice(0, 3);
 
   const projectValueData = topProjectsByValue.map(
     (p) => p.actualTotalWithVat || p.contractTotalWithVat || 0
@@ -971,7 +971,7 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* شبكة الرسوم البيانية: حالة المشاريع / تطور العقود / أعلى المشاريع قيمة */}
+        {/* شبكة الرسوم البيانية: حالة المشاريع / تطور العقود / أعلى المشاريع قيمة (جنب بعض) */}
         <section className="charts-grid">
           <div className="chart-card">
             <DonutChart
@@ -980,7 +980,6 @@ export default function HomePage() {
               colors={projectStatusColors}
               title={isAR ? "حالة المشاريع" : "Project Status"}
               size={140}
-              isAR={isAR}
             />
           </div>
           <div className="chart-card">
